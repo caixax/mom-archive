@@ -143,8 +143,14 @@ export function getLogger(module: string): winston.Logger {
   return root.child({ module });
 }
 
-/** Short, stack free description of an error for info and warn level lines. */
+/** Short, stack free description of an error for info and warn level lines. Follows the cause chain. */
 export function errMsg(e: unknown): string {
-  if (e instanceof Error) return redactString(`${e.name}: ${e.message}`);
-  return redactString(String(e));
+  if (!(e instanceof Error)) return redactString(String(e));
+  let msg = `${e.name}: ${e.message}`;
+  let cause: unknown = e.cause;
+  for (let depth = 0; cause && depth < 3; depth++) {
+    msg += ` <- ${cause instanceof Error ? cause.message : String(cause)}`;
+    cause = cause instanceof Error ? cause.cause : undefined;
+  }
+  return redactString(msg);
 }

@@ -554,7 +554,7 @@ export async function observeRun(
     await db
       .update(users)
       .set({
-        lastRunAt: sql`greatest(coalesce(${users.lastRunAt}, 'epoch'::timestamptz), ${new Date(r.createdAt)})`,
+        lastRunAt: sql`greatest(coalesce(${users.lastRunAt}, 'epoch'::timestamptz), ${new Date(r.createdAt).toISOString()}::timestamptz)`,
       })
       .where(eq(users.id, r.userID));
   }

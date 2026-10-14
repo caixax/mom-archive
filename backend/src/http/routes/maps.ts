@@ -335,7 +335,7 @@ export async function registerMapRoutes(app: FastifyInstance, deps: HttpDeps): P
           db,
           sql`
           select id, observed_at, last_confirmed_at, entry_count from leaderboard_observations
-          where map_id = ${id} and gamemode = ${gm} and track_type = ${tt} and track_num = ${tn} and style = ${st} and observed_at <= ${at}
+          where map_id = ${id} and gamemode = ${gm} and track_type = ${tt} and track_num = ${tn} and style = ${st} and observed_at <= ${at.toISOString()}::timestamptz
           order by observed_at desc limit 1
         `,
         )) as unknown as {
@@ -513,7 +513,7 @@ export async function registerMapRoutes(app: FastifyInstance, deps: HttpDeps): P
           db,
           sql`
           select id, observed_at from leaderboard_observations
-          where map_id = ${id} and gamemode = ${gm} and track_type = ${tt} and track_num = ${tn} and style = ${st} and observed_at <= ${at}
+          where map_id = ${id} and gamemode = ${gm} and track_type = ${tt} and track_num = ${tn} and style = ${st} and observed_at <= ${at.toISOString()}::timestamptz
           order by observed_at desc limit 1
         `,
         )) as unknown as { id: number; observed_at: Date }[];

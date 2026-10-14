@@ -269,7 +269,7 @@ export async function steamHistoryRefresh(ctx: PollerContext): Promise<JobResult
           .select({ id: steamSourcebans.id, currentState: steamSourcebans.currentState })
           .from(steamSourcebans)
           .where(
-            sql`${steamSourcebans.steamId} = ${id} and ${steamSourcebans.server} = ${b.Server} and ${steamSourcebans.banTimestamp} = ${banTs}`,
+            sql`${steamSourcebans.steamId} = ${id} and ${steamSourcebans.server} = ${b.Server} and ${steamSourcebans.banTimestamp} = ${banTs.toISOString()}::timestamptz`,
           );
         if (!prev) {
           newBans += 1;
