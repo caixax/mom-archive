@@ -7,7 +7,7 @@
 // Cursor lives in sync_state 'backfill'. Safe to interrupt and re-run.
 import { sql } from 'drizzle-orm';
 import { errMsg } from '../../logger.js';
-import type { MomPastRun } from '../../momentum/types.js';
+import type { MomPastRun, Paged } from '../../momentum/types.js';
 import type { PollerContext } from '../context.js';
 import { observeUser } from '../observe.js';
 import { getCursor, identityFromUser, setCursor, ensureAvatarArchived } from './helpers.js';
@@ -134,17 +134,38 @@ async function backfillRuns(
   const log = ctx.log.child({ module: 'backfill' });
   const stats: IngestStats = { seen: 0, stored: 0, newRuns: 0, newReplays: 0, maxId: 0 };
   let lastLog = Date.now();
-  for await (const { page, skip } of ctx.mom.pages<MomPastRun>(
-    '/runs',
-    { orderBy: 'createdAt', order: 'asc', expand: 'user,map,leaderboardRun' },
-    { startSkip: c.runsSkip },
-  )) {
+  // The API takes well over a second per page with these expands; fetching pages one by one
+  // makes the walk latency bound. Fetch a few in parallel (the rate limiter still serialises
+  // the budget) and ingest them in order so the cursor only advances past complete pages.
+  const CONCURRENCY = 4;
+  const TAKE = 100;
+  let done = false;
+  while (!done) {
     if (signal.aborted) return;
-    c.runsTotal = page.totalCount;
-    await ingestRuns(ctx, page.data, stats);
-    c.runsSkip = skip + page.returnCount;
-    c.runsSeen += page.returnCount;
-    if (c.runsSkip % 1000 === 0 || page.returnCount < 100) await save(ctx, c);
+    const skips = Array.from({ length: CONCURRENCY }, (_, i) => c.runsSkip + i * TAKE);
+    const batch = await Promise.all(
+      skips.map((skip) =>
+        ctx.mom.get<Paged<MomPastRun>>('/runs', {
+          orderBy: 'createdAt',
+          order: 'asc',
+          expand: 'user,map,leaderboardRun',
+          skip,
+          take: TAKE,
+        }),
+      ),
+    );
+    for (const page of batch) {
+      c.runsTotal = page.totalCount;
+      await ingestRuns(ctx, page.data, stats);
+      c.runsSkip += page.returnCount;
+      c.runsSeen += page.returnCount;
+      if (page.returnCount < TAKE) {
+        // End of the feed; anything newer is picked up by sync's incremental step.
+        done = true;
+        break;
+      }
+    }
+    await save(ctx, c);
     if (Date.now() - lastLog > 60_000) {
       lastLog = Date.now();
       log.info('backfill runs progress', {
