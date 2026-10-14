@@ -108,7 +108,7 @@ mom-archive/
 
 ## Requirements
 
-- Node.js 22 LTS or newer (`.nvmrc` says 24), pnpm 10+ (`corepack enable`)
+- Node.js 22.9 or newer (`.nvmrc` says 24; `--env-file-if-exists` is used to load `.env`), pnpm 10+ (`corepack enable`)
 - Postgres 16 with the `pg_trgm` extension available
 - An S3 compatible bucket (RustFS) reachable from the backend
 - nginx, pm2, cloudflared on the VPS

@@ -6,7 +6,8 @@ module.exports = {
       cwd: __dirname + '/backend',
       script: 'dist/main.js',
       interpreter: 'node',
-      node_args: '--enable-source-maps',
+      // ../.env resolves against cwd (backend/), so this reads the repo root .env
+      node_args: '--enable-source-maps --env-file-if-exists=../.env',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,

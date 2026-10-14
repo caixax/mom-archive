@@ -24,9 +24,8 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
     // nginx on loopback forwards the Cloudflare client IP in X-Forwarded-For / X-Real-IP
     trustProxy: '127.0.0.1,::1',
     bodyLimit: 16 * 1024,
-    disableRequestLogging: true,
     genReqId: () => randomUUID(),
-    ignoreTrailingSlash: true,
+    routerOptions: { ignoreTrailingSlash: true },
     ajv: {
       customOptions: {
         coerceTypes: 'array',
