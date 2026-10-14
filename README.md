@@ -27,7 +27,7 @@ Live instance: https://momarchive.caixa.cc
 One VPS, one Node process, nginx in front, Cloudflare Tunnel outside.
 
 ```
-browser --> Cloudflare --> cloudflared --> nginx 127.0.0.1:5770 --> front/dist (static)
+browser --> Cloudflare --> cloudflared --> nginx 127.0.0.1:5770 --> /var/www/momarchive (static front build)
                                                  \--> /api/ --> backend 127.0.0.1:5771 (Fastify, read-only Postgres role)
 
 backend process (pm2 "momarchive-backend")
@@ -98,7 +98,7 @@ mom-archive/
     test/                vitest: unit tests + PGlite integration tests + opt-in live tests
   front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
   deploy/
-    nginx.momarchive.conf      listens 127.0.0.1:5770, serves front/dist, proxies /api/ to 127.0.0.1:5771
+    nginx.momarchive.conf      listens 127.0.0.1:5770, serves /var/www/momarchive, proxies /api/ to 127.0.0.1:5771
     cloudflared.example.yml    ingress: momarchive.caixa.cc -> http://127.0.0.1:5770
     postgres-roles.sql         creates momarchive_rw and momarchive_ro
   ecosystem.config.cjs         pm2: momarchive-backend only
@@ -126,24 +126,24 @@ mom-archive/
 
 2. **Bucket**: create `mom-archive` in RustFS and an access key with read/write on that bucket only.
 
-3. **Checkout and configure**:
+3. **Checkout and configure** (any location works; the backend runs from the checkout):
 
    ```sh
-   git clone https://github.com/caixax/mom-archive /srv/mom-archive
-   cd /srv/mom-archive
+   git clone https://github.com/caixax/mom-archive
+   cd mom-archive
    cp .env.example .env     # fill in DATABASE_URL_RW/RO, S3_*, USER_AGENT contact, keys
    corepack enable
    pnpm install --frozen-lockfile
    pnpm build               # backend -> backend/dist, front -> front/dist
    ```
 
-4. **nginx** (port 5770 on loopback):
+4. **Frontend to the web root and nginx** (port 5770 on loopback, web root `/var/www/momarchive`):
 
    ```sh
-   cp deploy/nginx.momarchive.conf /etc/nginx/sites-available/momarchive.conf
-   # edit `root` to /srv/mom-archive/front/dist
-   ln -s /etc/nginx/sites-available/momarchive.conf /etc/nginx/sites-enabled/
-   nginx -t && systemctl reload nginx
+   sudo mkdir -p /var/www/momarchive
+   sudo rsync -a --delete front/dist/ /var/www/momarchive/
+   sudo cp deploy/nginx.momarchive.conf /etc/nginx/sites-enabled/momarchive
+   sudo nginx -t && sudo systemctl reload nginx
    ```
 
 5. **cloudflared**: merge `deploy/cloudflared.example.yml` into `/etc/cloudflared/config.yml` (hostname `momarchive.caixa.cc` -> `http://127.0.0.1:5770`) and restart the tunnel. Only nginx is reachable through the tunnel; the backend never is.
@@ -166,7 +166,7 @@ mom-archive/
 
    `pnpm backfill` runs only the backfill phases and leaves the queue draining to the pm2 backend (`pnpm cli backfill --phase users --only users` for a single phase). Both are safe to run while the backend is up; the queues use row locks.
 
-Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && pnpm pm2:reload`.
+Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && sudo rsync -a --delete front/dist/ /var/www/momarchive/ && pnpm pm2:reload`.
 
 ## Operations
 
