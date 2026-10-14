@@ -8,6 +8,7 @@
   import User from './pages/User.svelte';
   import Run from './pages/Run.svelte';
   import Deleted from './pages/Deleted.svelte';
+  import Api from './pages/Api.svelte';
   import About from './pages/About.svelte';
   import Status from './pages/Status.svelte';
   import Search from './pages/Search.svelte';
@@ -30,6 +31,7 @@
     ['/users', 'Users'],
     ['/deleted', 'Deleted runs'],
     ['/status', 'Status'],
+    ['/docs', 'API'],
     ['/about', 'About'],
   ] as const;
 
@@ -50,6 +52,7 @@
     if ((m = match('/users/:id', p))) return { c: User, params: m };
     if ((m = match('/runs/:id', p))) return { c: Run, params: m };
     if (p === '/deleted') return { c: Deleted, params: {} };
+    if (p === '/docs') return { c: Api, params: {} };
     if (p === '/about') return { c: About, params: {} };
     if (p === '/status') return { c: Status, params: {} };
     if (p === '/search') return { c: Search, params: {} };

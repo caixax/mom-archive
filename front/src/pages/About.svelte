@@ -106,8 +106,8 @@
 <h2>API</h2>
 <p>
   Everything on this site comes from the public JSON API under <span class="mono">/api</span>. See
-  <a href="/api/openapi.json" rel="external">/api/openapi.json</a>. Please keep automated access
-  reasonable; the API is rate limited per IP.
+  the <a href="/docs">API page</a> for endpoints, rate limits and examples, or
+  <a href="/api/openapi.json" rel="external">/api/openapi.json</a> for the machine readable spec.
 </p>
 
 <h2>Contact</h2>
