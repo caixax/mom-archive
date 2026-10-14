@@ -1,0 +1,81 @@
+{
+  "totalCount": 69,
+  "returnCount": 3,
+  "data": [
+    {
+      "gamemode": 3,
+      "trackType": 0,
+      "trackNum": 1,
+      "style": 0,
+      "time": 26.714999402873218,
+      "replayHash": "e38630bae44dedd6fd92d83a062d794d66e5fe08",
+      "flags": null,
+      "rank": 1,
+      "userID": 4558,
+      "user": {
+        "id": 4558,
+        "steamID": "76561198449328102",
+        "alias": "Gman",
+        "country": "TD",
+        "roles": 64,
+        "bans": 0,
+        "createdAt": "2025-10-03T17:17:20.811Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/af08674a374355cb5c48f0c6c5aaf3fd95025452_full.jpg"
+      },
+      "mapID": 2363,
+      "pastRunID": 8515089,
+      "createdAt": "2026-10-09T23:17:51.059Z",
+      "downloadURL": "https://cdn.momentum-mod.org/runs/e38630bae44dedd6fd92d83a062d794d66e5fe08"
+    },
+    {
+      "gamemode": 3,
+      "trackType": 0,
+      "trackNum": 1,
+      "style": 0,
+      "time": 28.519999362528324,
+      "replayHash": "e21da531a1baaf2145b526df25cf4bc6d7968698",
+      "flags": null,
+      "rank": 2,
+      "userID": 48614,
+      "user": {
+        "id": 48614,
+        "steamID": "76561197984747807",
+        "alias": "Osku",
+        "country": "FI",
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-12-08T14:39:54.254Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/2aabdbc7a20d1853880ce2628195c5f4de57b5ce_full.jpg"
+      },
+      "mapID": 2363,
+      "pastRunID": 8531725,
+      "createdAt": "2026-10-10T22:22:55.018Z",
+      "downloadURL": "https://cdn.momentum-mod.org/runs/e21da531a1baaf2145b526df25cf4bc6d7968698"
+    },
+    {
+      "gamemode": 3,
+      "trackType": 0,
+      "trackNum": 1,
+      "style": 0,
+      "time": 29.11999934911728,
+      "replayHash": "5fe43af8e896813f04d629b4518efb11acca4164",
+      "flags": null,
+      "rank": 3,
+      "userID": 48345,
+      "user": {
+        "id": 48345,
+        "steamID": "76561198059906626",
+        "alias": "gon",
+        "country": "AU",
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-12-07T05:10:50.648Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/fdd101f61f8487a07fc9ffa0f7592e480dff58a9_full.jpg"
+      },
+      "mapID": 2363,
+      "pastRunID": 8537570,
+      "createdAt": "2026-10-11T07:19:05.332Z",
+      "downloadURL": "https://cdn.momentum-mod.org/runs/5fe43af8e896813f04d629b4518efb11acca4164"
+    }
+  ]
+}

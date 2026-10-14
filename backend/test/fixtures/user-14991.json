@@ -1,0 +1,19 @@
+{
+  "id": 14991,
+  "steamID": "76561198885632335",
+  "alias": "[СКОТЧ TERRIER] mochinushi",
+  "country": null,
+  "profile": { "userID": 14991, "bio": "", "socials": {} },
+  "userStats": {
+    "cosXP": 16679883,
+    "level": 75,
+    "mapsCompleted": 191,
+    "runsSubmitted": 941,
+    "totalJumps": 41976,
+    "totalStrafes": 40560
+  },
+  "roles": 0,
+  "bans": 0,
+  "createdAt": "2025-10-04T12:28:01.711Z",
+  "avatarURL": "https://avatars.cloudflare.steamstatic.com/b9e26d994e1910f716f3d604e9c76c39cbd994ad_full.jpg"
+}

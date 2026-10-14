@@ -1,0 +1,94 @@
+{
+  "totalCount": 3,
+  "returnCount": 3,
+  "data": [
+    {
+      "notifyOn": 0,
+      "followedID": 14991,
+      "followeeID": 675,
+      "followed": {
+        "id": 14991,
+        "steamID": "76561198885632335",
+        "alias": "[СКОТЧ TERRIER] mochinushi",
+        "country": null,
+        "profile": { "userID": 14991, "bio": "", "socials": {} },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-04T12:28:01.711Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/b9e26d994e1910f716f3d604e9c76c39cbd994ad_full.jpg"
+      },
+      "followee": {
+        "id": 675,
+        "steamID": "76561198275358039",
+        "alias": "Eold",
+        "country": "US",
+        "profile": { "userID": 675, "bio": "", "socials": {} },
+        "roles": 68,
+        "bans": 0,
+        "createdAt": "2025-06-09T04:25:18.503Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/d8e48c25d227ecd2da1dd563c3984f6dd5e59c85_full.jpg"
+      },
+      "createdAt": "2025-10-15T02:54:48.245Z"
+    },
+    {
+      "notifyOn": 0,
+      "followedID": 14991,
+      "followeeID": 15599,
+      "followed": {
+        "id": 14991,
+        "steamID": "76561198885632335",
+        "alias": "[СКОТЧ TERRIER] mochinushi",
+        "country": null,
+        "profile": { "userID": 14991, "bio": "", "socials": {} },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-04T12:28:01.711Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/b9e26d994e1910f716f3d604e9c76c39cbd994ad_full.jpg"
+      },
+      "followee": {
+        "id": 15599,
+        "steamID": "76561198930773413",
+        "alias": "[BEDLINGTON TERRIER] ItzDoVi",
+        "country": "KZ",
+        "profile": {
+          "userID": 15599,
+          "bio": "hiii",
+          "socials": { "Discord": "itzdovi", "Twitch": "itzdovi", "YouTube": "@ItzDoViflania" }
+        },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-04T14:31:56.967Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/b432f0f3746b62f333416a40b1da2992fe129363_full.jpg"
+      },
+      "createdAt": "2026-07-27T05:07:10.053Z"
+    },
+    {
+      "notifyOn": 0,
+      "followedID": 14991,
+      "followeeID": 30059,
+      "followed": {
+        "id": 14991,
+        "steamID": "76561198885632335",
+        "alias": "[СКОТЧ TERRIER] mochinushi",
+        "country": null,
+        "profile": { "userID": 14991, "bio": "", "socials": {} },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-04T12:28:01.711Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/b9e26d994e1910f716f3d604e9c76c39cbd994ad_full.jpg"
+      },
+      "followee": {
+        "id": 30059,
+        "steamID": "76561197960287524",
+        "alias": "CrosbyStills&NashFan1960",
+        "country": null,
+        "profile": { "userID": 30059, "bio": "", "socials": null },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-13T00:46:08.160Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/182b88793dffcd44f05711be9c7c4464bf1d9852_full.jpg"
+      },
+      "createdAt": "2025-10-13T01:35:42.685Z"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "totalCount": 1,
+  "returnCount": 1,
+  "data": [
+    {
+      "notifyOn": 0,
+      "followedID": 15599,
+      "followeeID": 14991,
+      "followed": {
+        "id": 15599,
+        "steamID": "76561198930773413",
+        "alias": "[BEDLINGTON TERRIER] ItzDoVi",
+        "country": "KZ",
+        "profile": {
+          "userID": 15599,
+          "bio": "hiii",
+          "socials": { "Discord": "itzdovi", "Twitch": "itzdovi", "YouTube": "@ItzDoViflania" }
+        },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-04T14:31:56.967Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/b432f0f3746b62f333416a40b1da2992fe129363_full.jpg"
+      },
+      "followee": {
+        "id": 14991,
+        "steamID": "76561198885632335",
+        "alias": "[СКОТЧ TERRIER] mochinushi",
+        "country": null,
+        "profile": { "userID": 14991, "bio": "", "socials": {} },
+        "roles": 0,
+        "bans": 0,
+        "createdAt": "2025-10-04T12:28:01.711Z",
+        "avatarURL": "https://avatars.cloudflare.steamstatic.com/b9e26d994e1910f716f3d604e9c76c39cbd994ad_full.jpg"
+      },
+      "createdAt": "2026-08-31T23:58:10.261Z"
+    }
+  ]
+}

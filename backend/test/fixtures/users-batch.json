@@ -1,0 +1,63 @@
+{
+  "totalCount": 3,
+  "returnCount": 3,
+  "data": [
+    {
+      "id": 4,
+      "steamID": "76561198001371660",
+      "alias": "Mac",
+      "country": "GB",
+      "profile": { "userID": 4, "bio": "", "socials": {} },
+      "userStats": {
+        "cosXP": 461375,
+        "level": 15,
+        "mapsCompleted": 11,
+        "runsSubmitted": 28,
+        "totalJumps": 1324,
+        "totalStrafes": 4243
+      },
+      "roles": 1,
+      "bans": 0,
+      "createdAt": "2024-09-28T19:08:44.208Z",
+      "avatarURL": "https://avatars.cloudflare.steamstatic.com/f464e456e868b0c28e3bc96a2b44971c7a3fc3d1_full.jpg"
+    },
+    {
+      "id": 675,
+      "steamID": "76561198275358039",
+      "alias": "Eold",
+      "country": "US",
+      "profile": { "userID": 675, "bio": "", "socials": {} },
+      "userStats": {
+        "cosXP": 17888814,
+        "level": 77,
+        "mapsCompleted": 144,
+        "runsSubmitted": 1130,
+        "totalJumps": 43556,
+        "totalStrafes": 42315
+      },
+      "roles": 68,
+      "bans": 0,
+      "createdAt": "2025-06-09T04:25:18.503Z",
+      "avatarURL": "https://avatars.cloudflare.steamstatic.com/d8e48c25d227ecd2da1dd563c3984f6dd5e59c85_full.jpg"
+    },
+    {
+      "id": 14991,
+      "steamID": "76561198885632335",
+      "alias": "[СКОТЧ TERRIER] mochinushi",
+      "country": null,
+      "profile": { "userID": 14991, "bio": "", "socials": {} },
+      "userStats": {
+        "cosXP": 16729883,
+        "level": 75,
+        "mapsCompleted": 192,
+        "runsSubmitted": 943,
+        "totalJumps": 42036,
+        "totalStrafes": 40681
+      },
+      "roles": 0,
+      "bans": 0,
+      "createdAt": "2025-10-04T12:28:01.711Z",
+      "avatarURL": "https://avatars.cloudflare.steamstatic.com/b9e26d994e1910f716f3d604e9c76c39cbd994ad_full.jpg"
+    }
+  ]
+}
