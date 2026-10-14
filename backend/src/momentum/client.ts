@@ -41,8 +41,9 @@ class TokenBucket {
   constructor(
     private readonly capacity: number,
     private readonly refillPerSec: number,
+    initialTokens?: number,
   ) {
-    this.tokens = capacity;
+    this.tokens = Math.min(capacity, initialTokens ?? capacity);
   }
   /** Milliseconds to wait before one token is available, 0 when available now. */
   wait(): number {
@@ -70,9 +71,11 @@ export class RateLimiter {
   private chain: Promise<void> = Promise.resolve();
   constructor(rps: number, rpm: number) {
     // Capacity 1 on the per second bucket avoids bursts that the server would count in one second.
+    // The per minute bucket starts partially full so that a process restart cannot burst past
+    // the server's minute window on top of what the previous process already spent.
     this.buckets = [
       new TokenBucket(Math.max(1, Math.floor(rps)), rps),
-      new TokenBucket(rpm, rpm / 60),
+      new TokenBucket(rpm, rpm / 60, Math.ceil(rpm / 6)),
     ];
   }
   acquire(): Promise<void> {
