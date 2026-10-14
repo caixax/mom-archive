@@ -156,14 +156,15 @@ mom-archive/
    pm2 save && pm2 startup   # once, so it survives reboots
    ```
 
-7. **Initial backfill** (resumable, safe to re-run; takes hours for the runs phase):
+7. **Initial sync** (resumable, safe to re-run; the runs phase takes hours):
 
    ```sh
-   pnpm backfill
-   # or phases: pnpm cli backfill --phase users --only users
+   pnpm sync
    ```
 
-   The backfill walks `/runs` ascending (all gamemodes come back; archived ones are stored), users `1..N` in batches of 100, maps (sweep + id walk), then queues every archived leaderboard. Progress is in `sync_state` and shown on `/status`.
+   `sync` walks `/runs` ascending (all gamemodes come back; archived ones are stored), users `1..N` in batches of 100, maps (sweep + id walk), queues every archived leaderboard, picks up runs submitted while it ran, and then keeps downloading replays and refreshing leaderboards and users until both queues are empty. When it exits, the archive is caught up. Progress is in `sync_state` and shown on `/status`.
+
+   `pnpm backfill` runs only the backfill phases and leaves the queue draining to the pm2 backend (`pnpm cli backfill --phase users --only users` for a single phase). Both are safe to run while the backend is up; the queues use row locks.
 
 Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && pnpm pm2:reload`.
 
@@ -173,6 +174,7 @@ Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && pnpm pm2:
 - Logs: console lines `HH:mm:ss LEVEL [module] message key=value` (pm2 captures them under `logs/`), plus rotating JSON files in `backend/logs/momarchive-YYYY-MM-DD.log` at debug level. Secrets, connection string passwords, `key=` query values and bearer tokens are redacted.
 - One summary line per job tick (`runs-incremental done seen=.. new=.. apiCalls=.. ms=..`), `warn` for replays that were already gone (404), `error` only for real failures.
 - CLI (`pnpm cli <command>`):
+  - `sync`: catch up now. Backfill, then new runs, then drain the replay and refresh queues until empty.
   - `backfill [--phase p] [--only p]`
   - `reprocess-raw <raw/prefix> [--limit n]`: re-ingest stored raw pages (runs, maps, users)
   - `verify-replays [--limit n]`: re-hash every stored replay against its key

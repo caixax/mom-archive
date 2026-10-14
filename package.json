@@ -14,6 +14,7 @@
     "dev": "pnpm -r --parallel --stream run dev",
     "build": "pnpm -r run build",
     "migrate": "pnpm --filter backend run migrate",
+    "sync": "pnpm --filter backend run cli sync",
     "backfill": "pnpm --filter backend run cli backfill",
     "cli": "pnpm --filter backend run cli",
     "lint": "pnpm -r run lint",
