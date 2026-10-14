@@ -38,19 +38,22 @@ export async function ingestRuns(
 ): Promise<void> {
   const observedAt = new Date();
   const archived = new Set(ctx.cfg.ARCHIVE_GAMEMODES);
+  // Only runs in archived gamemodes get their embedded user and map observed. The global
+  // feed is 99 percent other gamemodes; writing all of those users makes the backfill
+  // database bound for no gain, and the users phase and the sweeps cover everyone anyway.
   const embeddedUsers: MomUserSummary[] = [];
-  for (const r of page) if (r.user) embeddedUsers.push(r.user);
+  for (const r of page) if (r.user && archived.has(r.gamemode)) embeddedUsers.push(r.user);
   await observeUsers(ctx.db, embeddedUsers, observedAt);
 
   const seenMaps = new Set<number>();
   for (const r of page) {
     stats.seen += 1;
     if (r.id > stats.maxId) stats.maxId = r.id;
+    if (!archived.has(r.gamemode)) continue;
     if (r.map && !seenMaps.has(r.map.id)) {
       seenMaps.add(r.map.id);
       await observeMap(ctx.db, r.map, observedAt, ctx.cfg.ARCHIVE_GAMEMODES);
     }
-    if (!archived.has(r.gamemode)) continue;
     const id = identityFromUser(r.user);
     const steamName = await freshSteamName(ctx.db, id.steamId);
     const isNew = await observeRun(ctx.db, r, observedAt, {
