@@ -33,16 +33,18 @@
   }
 
   onMount(() => {
-    // Meta refresh fallback for browsers that stop running timers in background tabs
-    const meta = document.createElement('meta');
-    meta.httpEquiv = 'refresh';
-    meta.content = '60';
-    document.head.appendChild(meta);
+    // No meta refresh here: the browser arms it with the /status URL and later drags the
+    // user back to it even after navigating away. Timers are throttled in background tabs,
+    // so instead refresh immediately when the tab becomes visible again.
     void load();
     const t = setInterval(load, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(t);
-      meta.remove();
+      document.removeEventListener('visibilitychange', onVisible);
     };
   });
 
