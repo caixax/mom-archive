@@ -1,0 +1,35 @@
+{
+  "name": "mom-archive",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Public, self-hosted archive of Momentum Mod leaderboard data, replays and user history",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream run dev",
+    "build": "pnpm -r run build",
+    "migrate": "pnpm --filter backend run migrate",
+    "backfill": "pnpm --filter backend run cli backfill",
+    "cli": "pnpm --filter backend run cli",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "format": "prettier --write \"**/*.{ts,js,cjs,mjs,json,md,svelte,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,cjs,mjs,json,md,svelte,css,yml,yaml}\"",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:reload": "pm2 reload ecosystem.config.cjs --update-env",
+    "pm2:logs": "pm2 logs momarchive-backend",
+    "pm2:stop": "pm2 stop momarchive-backend",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "lefthook": "2.2.2",
+    "prettier": "3.8.1",
+    "prettier-plugin-svelte": "3.5.1"
+  }
+}

@@ -1,0 +1,6 @@
+packages:
+  - backend
+  - front
+minimumReleaseAgeExclude:
+  - '@aws-sdk/client-s3@3.1151.0'
+  - '@fastify/helmet@13.2.0'

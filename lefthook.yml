@@ -1,0 +1,14 @@
+# Pre-commit hooks. gitleaks must be installed on the machine that commits:
+# https://github.com/gitleaks/gitleaks#installing
+pre-commit:
+  parallel: false
+  commands:
+    gitleaks:
+      run: gitleaks protect --staged --redact --verbose
+    dashes:
+      # The project forbids em dashes and en dashes everywhere.
+      glob: '*.{ts,js,cjs,mjs,json,md,svelte,css,yml,yaml,conf,sql}'
+      run: node scripts/check-dashes.mjs {staged_files}
+    format:
+      glob: '*.{ts,js,cjs,mjs,json,md,svelte,css,yml,yaml}'
+      run: pnpm exec prettier --check {staged_files}

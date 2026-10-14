@@ -1,0 +1,33 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# dependencies and build output
+node_modules/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+.svelte-kit/
+.vite/
+
+# logs and runtime
+logs/
+*.log
+.pm2/
+pm2.dump
+dump.pm2
+
+# replay bytes and real fixtures must never be committed
+*.momtv
+*.mtv
+*.bsp
+backend/test/fixtures/**/*.bin
+
+# editors and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
