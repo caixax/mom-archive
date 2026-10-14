@@ -166,7 +166,7 @@ mom-archive/
 
    `pnpm backfill` runs only the backfill phases and leaves the queue draining to the pm2 backend (`pnpm cli backfill --phase users --only users` for a single phase). Both are safe to run while the backend is up; the queues use row locks.
 
-Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && sudo rsync -a --delete front/dist/ /var/www/momarchive/ && pnpm pm2:reload`.
+Updating: run `./scripts/update.sh` from the repo root. It pulls, installs, builds, publishes `front/dist` to `/var/www/momarchive`, re-installs the nginx config only if it changed, and reloads the backend under pm2. The `.env` and the live nginx config are never touched by `git pull` itself.
 
 ## Operations
 
