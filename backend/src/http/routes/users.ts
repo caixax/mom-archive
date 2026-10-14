@@ -50,21 +50,35 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
     {
       schema: {
         tags: ['users'],
-        summary: 'List or search users by current or past alias',
+        summary:
+          'List or search users by current or past alias, with country, role and ban filters',
         querystring: Type.Object({
           q: Type.Optional(SearchText),
+          country: Type.Optional(Type.String({ pattern: '^[A-Za-z]{2}$' })),
+          role: Type.Optional(Type.Integer({ minimum: 1, maximum: 511 })),
+          ban: Type.Optional(Type.Integer({ minimum: 1, maximum: 31 })),
+          banned: Type.Optional(Type.Boolean()),
           page: PageQuery,
           take: TakeQuery,
           sort: Type.Optional(
-            Type.Union([Type.Literal('recent'), Type.Literal('alias'), Type.Literal('id')]),
+            Type.Union([
+              Type.Literal('recent'),
+              Type.Literal('alias'),
+              Type.Literal('id'),
+              Type.Literal('country'),
+            ]),
           ),
         }),
         response: { 200: AnyObject },
       },
     },
     async (req) => {
-      const { q, page, take, sort } = req.query;
+      const { q, country, role, ban, banned, page, take, sort } = req.query;
       const off = offsetOf(page, take);
+      const cond = sql`(${country ?? null}::text is null or upper(u.country) = upper(${country ?? ''}))
+        and (${role ?? null}::int is null or (u.roles & ${role ?? 0}) <> 0)
+        and (${ban ?? null}::int is null or (u.bans & ${ban ?? 0}) <> 0)
+        and (${banned ?? null}::boolean is null or (u.bans <> 0) = ${banned ?? false})`;
       if (q && q.trim().length > 0) {
         const term = q.trim();
         const rows = (await execRows(
@@ -80,6 +94,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
           )
           select u.*, h.matched_on, h.matched_text, count(*) over() as total
           from hits h join users u on u.id = h.id
+          where ${cond}
           order by h.prio, (lower(u.alias) = lower(${term})) desc, u.last_run_at desc nulls last
           limit ${take} offset ${off}
         `,
@@ -102,13 +117,15 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
       }
       const order =
         sort === 'alias'
-          ? sql`lower(alias) asc nulls last`
+          ? sql`lower(u.alias) asc nulls last`
           : sort === 'id'
-            ? sql`id asc`
-            : sql`last_run_at desc nulls last, id desc`;
+            ? sql`u.id asc`
+            : sort === 'country'
+              ? sql`u.country asc nulls last, lower(u.alias) asc nulls last`
+              : sql`u.last_run_at desc nulls last, u.id desc`;
       const rows = (await execRows(
         db,
-        sql`select *, count(*) over() as total from users order by ${order} limit ${take} offset ${off}`,
+        sql`select u.*, count(*) over() as total from users u where ${cond} order by ${order} limit ${take} offset ${off}`,
       )) as unknown as (typeof users.$inferSelect & { total: number })[];
       const total = rows[0]?.total ? Number(rows[0].total) : 0;
       return paged(

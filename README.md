@@ -187,24 +187,24 @@ Updating: run `./scripts/update.sh` from the repo root. It pulls, installs, buil
 
 Read only JSON under `/api`, ETag and `Cache-Control` on everything, OpenAPI at `/api/openapi.json`. Highlights:
 
-| Endpoint                                                                                                  | Notes                                                                                   |
-| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `GET /api/users?q=&page=`                                                                                 | search current and past aliases, Steam names, SourceBans names                          |
-| `GET /api/users/:id`                                                                                      | current state + Steam + history + alias/avatar timelines + stats over time + SourceBans |
-| `GET /api/users/:id/runs?gamemode=&style=&mapId=&removed=&page=`                                          | all runs including removed ones                                                         |
-| `GET /api/users/:id/follow-events`, `/follows`                                                            |                                                                                         |
-| `GET /api/maps?q=&gamemode=&bucket=released\|beta\|other&lbType=&native=&page=`                           |                                                                                         |
-| `GET /api/maps/:idOrName`                                                                                 | detail with leaderboards, versions, images, credits, history                            |
-| `GET /api/maps/:id/leaderboard?gamemode=&trackType=&trackNum=&style=&at=`                                 | current (removed entries marked) or as of a time                                        |
-| `GET /api/maps/:id/leaderboard/observations`                                                              | points in time available                                                                |
-| `GET /api/maps/:id/leaderboard/diff?from=&to=`                                                            | added, removed, improved                                                                |
-| `GET /api/runs?removed=true&page=`                                                                        | deleted runs feed                                                                       |
-| `GET /api/runs/:id`                                                                                       | run detail with replay header                                                           |
-| `GET /api/replays/:sha1`, `/download`                                                                     | metadata; streamed `.momtv` with Range support, `Content-Disposition: attachment`       |
-| `GET /api/avatars/:hash`, `/api/maps/images/:id`                                                          | archived images                                                                         |
-| `GET /api/search?q=`                                                                                      | one box: aliases (current and past), Steam names, SteamID64/3/2, Momentum id, map names |
-| `GET /api/changes?type=alias\|avatar\|ban\|role\|removed_run\|steam_name\|steam_avatar\|vac\|new_wr\|map` | global feed                                                                             |
-| `GET /api/stats`, `/api/status`, `/api/about`, `/api/health`                                              |                                                                                         |
+| Endpoint                                                                                                  | Notes                                                                                         |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `GET /api/users?q=&country=&role=&ban=&banned=&sort=&page=`                                               | search current and past aliases, Steam names, SourceBans names; country, role and ban filters |
+| `GET /api/users/:id`                                                                                      | current state + Steam + history + alias/avatar timelines + stats over time + SourceBans       |
+| `GET /api/users/:id/runs?gamemode=&style=&mapId=&removed=&page=`                                          | all runs including removed ones                                                               |
+| `GET /api/users/:id/follow-events`, `/follows`                                                            |                                                                                               |
+| `GET /api/maps?q=&gamemode=&bucket=released\|beta\|other&lbType=&native=&page=`                           |                                                                                               |
+| `GET /api/maps/:idOrName`                                                                                 | detail with leaderboards, versions, images, credits, history                                  |
+| `GET /api/maps/:id/leaderboard?gamemode=&trackType=&trackNum=&style=&at=`                                 | current (removed entries marked) or as of a time                                              |
+| `GET /api/maps/:id/leaderboard/observations`                                                              | points in time available                                                                      |
+| `GET /api/maps/:id/leaderboard/diff?from=&to=`                                                            | added, removed, improved                                                                      |
+| `GET /api/runs?removed=true&page=`                                                                        | deleted runs feed                                                                             |
+| `GET /api/runs/:id`                                                                                       | run detail with replay header                                                                 |
+| `GET /api/replays/:sha1`, `/download`                                                                     | metadata; streamed `.momtv` with Range support, `Content-Disposition: attachment`             |
+| `GET /api/avatars/:hash`, `/api/maps/images/:id`                                                          | archived images                                                                               |
+| `GET /api/search?q=`                                                                                      | one box: aliases (current and past), Steam names, SteamID64/3/2, Momentum id, map names       |
+| `GET /api/changes?type=alias\|avatar\|ban\|role\|removed_run\|steam_name\|steam_avatar\|vac\|new_wr\|map` | global feed                                                                                   |
+| `GET /api/stats`, `/api/status`, `/api/about`, `/api/health`                                              |                                                                                               |
 
 Every route has a JSON schema; ids are integers, `page`/`take` are bounded, `q` is capped at 100 characters, dates are parsed. Errors are generic (`{ error, statusCode, requestId }`), never database text. Rate limit: 240 requests/minute per client IP. Only `GET` and `HEAD` are accepted.
 

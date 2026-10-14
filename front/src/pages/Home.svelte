@@ -27,6 +27,7 @@
 
   let stats = $state<Stats | null>(null);
   let changes = $state<ChangeRow[]>([]);
+  let bans = $state<ChangeRow[]>([]);
   let error = $state<string | null>(null);
 
   $effect(() => {
@@ -35,6 +36,9 @@
       .catch((e) => (error = String(e.message)));
     api<Paged<ChangeRow>>('/api/changes', { take: 40 })
       .then((c) => (changes = c.data))
+      .catch(() => undefined);
+    api<Paged<ChangeRow>>('/api/changes', { type: 'ban', take: 8 })
+      .then((c) => (bans = c.data))
       .catch(() => undefined);
   });
 
@@ -145,36 +149,62 @@
         {/each}
       </ul>
     </section>
-    <section>
-      <h2>Last successful poll per job</h2>
-      <div class="table-wrap">
-        <table>
-          <thead
-            ><tr
-              ><th>Job</th><th>Finished</th><th class="num">Seen</th><th class="num">New</th><th
-                class="num">API calls</th
-              ></tr
-            ></thead
-          >
-          <tbody>
-            {#each stats.lastSuccessfulTick as t (t.job)}
-              <tr
-                ><td>{t.job}</td><td class="mono small" title={formatDate(t.finishedAt)}
-                  >{relTime(t.finishedAt)}</td
-                ><td class="num">{t.itemsSeen}</td><td class="num">{t.itemsNew}</td><td class="num"
-                  >{t.apiCalls}</td
-                ></tr
+    <div>
+      <section>
+        <h2>Latest bans</h2>
+        <ul class="timeline">
+          {#each bans as b (String(b.userId) + b.at)}
+            <li>
+              <span class="when">{relTime(b.at)}</span>
+              <span>
+                <Avatar hash={b.userAvatarHash} size="sm" />
+                <a href={`/users/${b.userId}`}>{b.userAlias ?? `user ${b.userId}`}</a>
+                <span class="mono">{valueLabel('bans', b.oldValue)}</span>
+                to <span class="mono">{valueLabel('bans', b.newValue)}</span>
+              </span>
+            </li>
+          {:else}
+            <li>
+              <span class="when"></span><span class="muted"
+                >No ban changes observed yet. Bans applied before the archive started watching only
+                show on the user pages.</span
               >
-            {:else}
-              <tr><td colspan="5" class="muted">No polls yet.</td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <p class="muted small">
-        {formatInt(stats.apiCallsLastHour)} Momentum API calls in the last hour.
-        <a href="/status">Full status</a>.
-      </p>
-    </section>
+            </li>
+          {/each}
+        </ul>
+        <p class="muted small"><a href="/users?banned=true">All banned players</a></p>
+      </section>
+      <section>
+        <h2>Last successful poll per job</h2>
+        <div class="table-wrap">
+          <table>
+            <thead
+              ><tr
+                ><th>Job</th><th>Finished</th><th class="num">Seen</th><th class="num">New</th><th
+                  class="num">API calls</th
+                ></tr
+              ></thead
+            >
+            <tbody>
+              {#each stats.lastSuccessfulTick as t (t.job)}
+                <tr
+                  ><td>{t.job}</td><td class="mono small" title={formatDate(t.finishedAt)}
+                    >{relTime(t.finishedAt)}</td
+                  ><td class="num">{t.itemsSeen}</td><td class="num">{t.itemsNew}</td><td
+                    class="num">{t.apiCalls}</td
+                  ></tr
+                >
+              {:else}
+                <tr><td colspan="5" class="muted">No polls yet.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <p class="muted small">
+          {formatInt(stats.apiCallsLastHour)} Momentum API calls in the last hour.
+          <a href="/status">Full status</a>.
+        </p>
+      </section>
+    </div>
   </div>
 {/if}

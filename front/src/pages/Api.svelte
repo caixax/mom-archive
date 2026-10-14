@@ -11,8 +11,8 @@
       desc: 'One box for everything. Matches current and past Momentum aliases, current and past Steam names, SourceBans names, SteamID64 / SteamID3 / SteamID2, Momentum user id and map names. Returns { users, maps } with matchedOn telling which field hit, 20 of each at most.',
     },
     {
-      path: 'GET /api/users?q=&sort=&page=&take=',
-      desc: 'List or search users. The search also matches past aliases and Steam names. sort: recent (default), alias, id.',
+      path: 'GET /api/users?q=&country=&role=&ban=&banned=&sort=&page=&take=',
+      desc: 'List or search users. The search also matches past aliases and Steam names. country is a 2 letter code, role and ban are bit values (see enums below), banned=true means any ban. sort: recent (default), alias, id, country.',
     },
     {
       path: 'GET /api/users/:id',
