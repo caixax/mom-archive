@@ -51,7 +51,10 @@ const schema = z.object({
 
   RATE_LIMIT_RPS: z.coerce.number().min(0.1).max(20).default(15),
   RATE_LIMIT_RPM: z.coerce.number().min(1).max(200).default(180),
-  USER_AGENT: z.string().min(1).default('mom-archive/1.0 (+https://momarchive.caixa.cc)'),
+  USER_AGENT: z
+    .string()
+    .min(1)
+    .default('mom-archive/1.0 (+https://momarchive.caixa.cc; contact: westlargo@proton.me)'),
 
   STEAM_API_KEY: z.string().optional().default(''),
   STEAMHISTORY_API_KEY: z.string().optional().default(''),

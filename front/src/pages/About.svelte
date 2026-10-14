@@ -109,3 +109,9 @@
   <a href="/api/openapi.json" rel="external">/api/openapi.json</a>. Please keep automated access
   reasonable; the API is rate limited per IP.
 </p>
+
+<h2>Contact</h2>
+<p>
+  Questions, takedown requests or data corrections:
+  <a href="mailto:westlargo@proton.me" rel="noopener noreferrer">westlargo@proton.me</a>.
+</p>
