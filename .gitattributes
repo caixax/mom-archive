@@ -1,0 +1,7 @@
+# The VPS is Linux; keep LF in the repo regardless of the committing OS.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.momtv binary
+*.mtv binary
+*.bsp binary
