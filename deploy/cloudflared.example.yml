@@ -1,0 +1,16 @@
+# Cloudflare Tunnel ingress for mom-archive.
+# Copy the relevant part into /etc/cloudflared/config.yml (or merge with your existing tunnel config).
+# The tunnel talks to nginx on loopback only; the backend on 5771 is never exposed.
+
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_ID.json
+
+ingress:
+  - hostname: momarchive.caixa.cc
+    service: http://127.0.0.1:5770
+    originRequest:
+      httpHostHeader: momarchive.caixa.cc
+      connectTimeout: 10s
+      noTLSVerify: false
+  # Catch all: must be last
+  - service: http_status:404

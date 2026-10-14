@@ -1,0 +1,249 @@
+# mom-archive
+
+A public, self-hosted archive of Momentum Mod leaderboard data for the Bhop HL1 gamemode. Think "Wayback Machine for Momentum Mod": it polls the official public API on a schedule, stores every run it observes, downloads every replay file before Momentum deletes it, and keeps a full change history of users (alias, avatar, bio, socials, roles, bans, stats), maps, leaderboards and follows. Everything is public, read only, no login.
+
+Momentum itself keeps none of this history: only the current PB replay of each leaderboard survives (the previous one is deleted the moment a player improves), alias and avatar are single overwritten columns, and runs deleted by admins vanish from the public API without a trace. The archive exists to preserve what Momentum throws away.
+
+Live instance: https://momarchive.caixa.cc
+
+## Contents
+
+- [Architecture](#architecture)
+- [What is archived](#what-is-archived)
+- [What cannot be rescued](#what-cannot-be-rescued)
+- [Momentum API quirks the archive works around](#momentum-api-quirks-the-archive-works-around)
+- [Repository layout](#repository-layout)
+- [Requirements](#requirements)
+- [Deployment](#deployment)
+- [Operations](#operations)
+- [HTTP API](#http-api)
+- [Database](#database)
+- [Adding a gamemode](#adding-a-gamemode)
+- [Development](#development)
+- [Security notes](#security-notes)
+
+## Architecture
+
+One VPS, one Node process, nginx in front, Cloudflare Tunnel outside.
+
+```
+browser --> Cloudflare --> cloudflared --> nginx 127.0.0.1:5770 --> front/dist (static)
+                                                 \--> /api/ --> backend 127.0.0.1:5771 (Fastify, read-only Postgres role)
+
+backend process (pm2 "momarchive-backend")
+  http/     Fastify API, read-only pool, helmet, rate limit, cors, etag, OpenAPI
+  poller/   scheduler + jobs, read-write pool
+            runs-incremental, beta-runs, replay-download, refresh-worker,
+            users-sweep, maps-sweep, leaderboards-full-sweep, maps-walk,
+            steam-refresh, steamhistory-refresh, avatars-fetch, search-refresh, ...
+  storage/  S3 (RustFS): replays/, avatars/, maps/images/, maps/bsp/, raw/
+  db/       Postgres 16 via Drizzle, migrations applied on boot
+```
+
+The backend binds to `127.0.0.1` only and refuses to start if `BIND_HOST` is anything else (unless `ALLOW_PUBLIC_BIND=true`). The frontend calls same-origin `/api/...` URLs. Absolute URLs are built from `PUBLIC_BASE_URL`, never from the request host. The real client IP comes from `CF-Connecting-IP` (nginx forwards it as `X-Real-IP` / `X-Forwarded-For`, Fastify trusts loopback only).
+
+## What is archived
+
+- **Runs**: every `PastRun` in the archived gamemodes (`ARCHIVE_GAMEMODES`, default `3` = Bhop HL1), PB or not, on any map (including maps built for other modes). Each run carries `observed_alias`, `observed_avatar_hash` and `observed_steam_name` as they were when first seen; those are never rewritten.
+- **Replays**: the `.momtv` file of every leaderboard entry observed, downloaded as soon as a new `replayHash` is seen, sha1 verified, header parsed and compared with the run (gamemode, track, style, time, SteamID, map name). Failures are recorded with the HTTP status so a 404 (already deleted upstream) is distinguishable from a network error.
+- **Leaderboards**: current entries plus append-only observations. A new observation is stored only when the board content changed, so "leaderboard as of date X" is exact and cheap. Entries that were present and are now missing get `removed_at`; this is how admin deletions surface. A player improving their time replaces their entry; that is "improved", not "removed".
+- **Users**: current state plus `user_snapshots` and `user_field_changes` for alias, country, avatar, roles, bans, bio, every social, and the six stats. Follows and followers are diffed into `follow_events`. Activities are stored. Users are discovered from runs, leaderboards, follows, credits, a daily sweep (100 users per API call) and the backfill id walk.
+- **Maps**: current state, snapshots, field changes (status, name, description, stats, per leaderboard tier/tags/type, credits, versions, images), versions, credits, images (the `large` variant archived once per image id), and the list of leaderboards. BSP files are optional (`ARCHIVE_BSPS=false` by default).
+- **Steam side** (needs `STEAM_API_KEY`): persona name, avatar, visibility, account creation, country, VAC/game/community/economy bans from `GetPlayerSummaries` and `GetPlayerBans`, diffed into `steam_field_changes`. Active users (ran in the last 7 days) every 6 hours, everyone daily.
+- **SourceBans** (needs `STEAMHISTORY_API_KEY`): ban records from SteamHistory.net per SteamID, normalized into `steam_sourcebans`; the name the player had on the banning server feeds the alias history.
+- **Avatars**: every avatar hash seen (Momentum or Steam) is downloaded once to `avatars/{hash}.jpg`, so the gallery works after Steam drops the image.
+- **Raw responses**: every API body is gzipped to `raw/{endpoint}/{yyyy}/{mm}/{dd}/{timestamp}-{hash}.json.gz`. Retention is unlimited; `pnpm cli reprocess-raw raw/runs/2026/10` re-ingests.
+
+The UI and `/api/about` state the date the archive started watching. Nothing before that date is known, and the archive never fabricates history.
+
+## What cannot be rescued
+
+- Replays deleted before the archive started, or replaced between two polls of a board nothing else touched (the incremental run poll triggers a board refresh, so this window is normally one poll interval).
+- Replays of runs that were never a PB. Momentum never uploads them.
+- Runs that admins moved to `deletedruns/`. That bucket is not public.
+- Anything behind auth: notifications, reports, chat bans, admin activity, maps in private testing. With an optional `MOMENTUM_TOKEN` the archive also reads `/maps/submissions` for faster beta discovery; it is never required.
+- Steam history from before the archive first saw a player. Name and avatar history comes only from the archive's own Momentum and Steam polling plus SourceBans `Name` fields, never from scraping steamcommunity.com.
+
+## Momentum API quirks the archive works around
+
+Verified against the live API and the public backend source (`momentum-mod/website`, `apps/backend/src/app`):
+
+- `GET /runs` **ignores** `gamemode`, `trackType`, `trackNum` and `style` (`PastRunsService.getAll` never applies them). The archive walks the global feed (all gamemodes) and filters client side. Raw pages are kept for everything.
+- `GET /runs` without `mapID` only returns runs on **approved** maps. Runs on beta maps are collected by a separate per map walk (`beta-runs`) for every known non-approved map that has an archived leaderboard.
+- `GET /runs/{id}` only accepts `expand=user`. The embedded `leaderboardRun` in list responses has no `rank`; ranks come from the leaderboard endpoint.
+- `GET /maps/{id}/leaderboard` has no `expand`; `user` is always embedded, `splits` are not.
+- Anonymous `GET /maps` lists approved maps only. Beta maps are discovered from the run feed and from `maps-walk`, which probes `GET /maps/{id}` for ids `1..max+200` daily and stores any map with an archived gamemode leaderboard regardless of status (verified: map 2231 `df_biotrix-omega` is status 3 and answers).
+- `GET /users?userIDs=a,b,c&expand=profile,userStats&take=100` works and is what the daily user sweep and the backfill use (100 users per call).
+- In `Follow` objects `followedID` is the user being followed and `followeeID` is the user doing the following. The archive stores `follower_id` / `followed_id` in plain English.
+- Rate limit: 20 requests/second and 200/minute per IP. The client uses two token buckets (`RATE_LIMIT_RPS=15`, `RATE_LIMIT_RPM=180` by default) and honours `Retry-After` on 429.
+
+## Repository layout
+
+```
+mom-archive/
+  backend/
+    src/
+      config.ts          env parsing with zod, fails fast on missing values
+      logger.ts          winston factory (console line format + rotating JSON file), secret redaction
+      bootstrap.ts       builds config, pools, storage, clients, scheduler
+      main.ts            migrations, HTTP server, poller, in one process
+      momentum/          enums, rate limited API client, typed responses, .momtv header parser, SteamID helpers
+      db/                Drizzle schema, migrations runner, two connection pools (rw, ro)
+      storage/           S3 client (RustFS), raw snapshot store
+      poller/            scheduler, queues, diffing, observe (upserts + history), jobs/
+      http/              Fastify app, plugins, routes, OpenAPI
+      steam/             Steam Web API and SteamHistory.net clients
+      cli/               backfill, reprocess-raw, verify-replays, requeue-replays, refresh-*, job
+    drizzle/             SQL migrations (0000_init, 0001_search_index)
+    test/                vitest: unit tests + PGlite integration tests + opt-in live tests
+  front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
+  deploy/
+    nginx.momarchive.conf      listens 127.0.0.1:5770, serves front/dist, proxies /api/ to 127.0.0.1:5771
+    cloudflared.example.yml    ingress: momarchive.caixa.cc -> http://127.0.0.1:5770
+    postgres-roles.sql         creates momarchive_rw and momarchive_ro
+  ecosystem.config.cjs         pm2: momarchive-backend only
+  .env.example
+  lefthook.yml                 pre-commit: gitleaks, dash check, prettier
+```
+
+## Requirements
+
+- Node.js 22 LTS or newer (`.nvmrc` says 24), pnpm 10+ (`corepack enable`)
+- Postgres 16 with the `pg_trgm` extension available
+- An S3 compatible bucket (RustFS) reachable from the backend
+- nginx, pm2, cloudflared on the VPS
+- `gitleaks` on any machine that commits (pre-commit hook)
+
+## Deployment
+
+1. **Postgres roles and database** (as a superuser; edit the passwords first):
+
+   ```sh
+   psql -U postgres -f deploy/postgres-roles.sql
+   ```
+
+   This creates `momarchive_rw` (owner, used by the poller and migrations) and `momarchive_ro` (used by the HTTP API, `default_transaction_read_only = on`), the database, the `pg_trgm` extension and default privileges so future tables are readable by the RO role.
+
+2. **Bucket**: create `mom-archive` in RustFS and an access key with read/write on that bucket only.
+
+3. **Checkout and configure**:
+
+   ```sh
+   git clone https://github.com/caixax/mom-archive /srv/mom-archive
+   cd /srv/mom-archive
+   cp .env.example .env     # fill in DATABASE_URL_RW/RO, S3_*, USER_AGENT contact, keys
+   corepack enable
+   pnpm install --frozen-lockfile
+   pnpm build               # backend -> backend/dist, front -> front/dist
+   ```
+
+4. **nginx** (port 5770 on loopback):
+
+   ```sh
+   cp deploy/nginx.momarchive.conf /etc/nginx/sites-available/momarchive.conf
+   # edit `root` to /srv/mom-archive/front/dist
+   ln -s /etc/nginx/sites-available/momarchive.conf /etc/nginx/sites-enabled/
+   nginx -t && systemctl reload nginx
+   ```
+
+5. **cloudflared**: merge `deploy/cloudflared.example.yml` into `/etc/cloudflared/config.yml` (hostname `momarchive.caixa.cc` -> `http://127.0.0.1:5770`) and restart the tunnel. Only nginx is reachable through the tunnel; the backend never is.
+
+6. **Backend under pm2** (migrations run on boot):
+
+   ```sh
+   pnpm pm2:start
+   pnpm pm2:logs
+   pm2 save && pm2 startup   # once, so it survives reboots
+   ```
+
+7. **Initial backfill** (resumable, safe to re-run; takes hours for the runs phase):
+
+   ```sh
+   pnpm backfill
+   # or phases: pnpm cli backfill --phase users --only users
+   ```
+
+   The backfill walks `/runs` ascending (all gamemodes come back; archived ones are stored), users `1..N` in batches of 100, maps (sweep + id walk), then queues every archived leaderboard. Progress is in `sync_state` and shown on `/status`.
+
+Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && pnpm pm2:reload`.
+
+## Operations
+
+- `/status` page and `GET /api/status`: one card per component (Momentum API, database, storage, watcher jobs, replay queue, Steam API, SteamHistory, backfill). No hostnames, paths or secrets.
+- Logs: console lines `HH:mm:ss LEVEL [module] message key=value` (pm2 captures them under `logs/`), plus rotating JSON files in `backend/logs/momarchive-YYYY-MM-DD.log` at debug level. Secrets, connection string passwords, `key=` query values and bearer tokens are redacted.
+- One summary line per job tick (`runs-incremental done seen=.. new=.. apiCalls=.. ms=..`), `warn` for replays that were already gone (404), `error` only for real failures.
+- CLI (`pnpm cli <command>`):
+  - `backfill [--phase p] [--only p]`
+  - `reprocess-raw <raw/prefix> [--limit n]`: re-ingest stored raw pages (runs, maps, users)
+  - `verify-replays [--limit n]`: re-hash every stored replay against its key
+  - `requeue-replays [--include-404]`: retry failed downloads
+  - `refresh-user <id>`, `refresh-map <id>`, `refresh-leaderboard <mapId:gamemode:trackType:trackNum:style>`
+  - `job <name>`: run a scheduler job once (for example `job maps-walk`)
+- Poller intervals: `POLL_RUNS_MINUTES` (10), `POLL_MAPS_HOURS` (6), `POLL_USERS_SWEEP_HOURS` (24), `POLL_LEADERBOARDS_SWEEP_HOURS` (24), `POLL_MAPS_WALK_HOURS` (24). `REPLAY_CONCURRENCY` (4). `POLLER_ENABLED=false` runs the API only.
+
+## HTTP API
+
+Read only JSON under `/api`, ETag and `Cache-Control` on everything, OpenAPI at `/api/openapi.json`. Highlights:
+
+| Endpoint                                                                                                  | Notes                                                                                   |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /api/users?q=&page=`                                                                                 | search current and past aliases, Steam names, SourceBans names                          |
+| `GET /api/users/:id`                                                                                      | current state + Steam + history + alias/avatar timelines + stats over time + SourceBans |
+| `GET /api/users/:id/runs?gamemode=&style=&mapId=&removed=&page=`                                          | all runs including removed ones                                                         |
+| `GET /api/users/:id/follow-events`, `/follows`                                                            |                                                                                         |
+| `GET /api/maps?q=&gamemode=&bucket=released\|beta\|other&lbType=&native=&page=`                           |                                                                                         |
+| `GET /api/maps/:idOrName`                                                                                 | detail with leaderboards, versions, images, credits, history                            |
+| `GET /api/maps/:id/leaderboard?gamemode=&trackType=&trackNum=&style=&at=`                                 | current (removed entries marked) or as of a time                                        |
+| `GET /api/maps/:id/leaderboard/observations`                                                              | points in time available                                                                |
+| `GET /api/maps/:id/leaderboard/diff?from=&to=`                                                            | added, removed, improved                                                                |
+| `GET /api/runs?removed=true&page=`                                                                        | deleted runs feed                                                                       |
+| `GET /api/runs/:id`                                                                                       | run detail with replay header                                                           |
+| `GET /api/replays/:sha1`, `/download`                                                                     | metadata; streamed `.momtv` with Range support, `Content-Disposition: attachment`       |
+| `GET /api/avatars/:hash`, `/api/maps/images/:id`                                                          | archived images                                                                         |
+| `GET /api/search?q=`                                                                                      | one box: aliases (current and past), Steam names, SteamID64/3/2, Momentum id, map names |
+| `GET /api/changes?type=alias\|avatar\|ban\|role\|removed_run\|steam_name\|steam_avatar\|vac\|new_wr\|map` | global feed                                                                             |
+| `GET /api/stats`, `/api/status`, `/api/about`, `/api/health`                                              |                                                                                         |
+
+Every route has a JSON schema; ids are integers, `page`/`take` are bounded, `q` is capped at 100 characters, dates are parsed. Errors are generic (`{ error, statusCode, requestId }`), never database text. Rate limit: 240 requests/minute per client IP. Only `GET` and `HEAD` are accepted.
+
+## Database
+
+Postgres 16, Drizzle ORM, migrations in `backend/drizzle` applied on boot (and by `pnpm migrate`). Main tables:
+
+`users`, `user_snapshots`, `user_field_changes`, `avatars`, `steam_profiles`, `steam_profile_snapshots`, `steam_field_changes`, `steam_name_history`, `steam_avatar_history`, `steam_sourcebans`, `follows`, `follow_events`, `maps`, `map_snapshots`, `map_field_changes`, `map_versions`, `map_images`, `map_credits`, `leaderboards`, `runs`, `leaderboard_entries`, `leaderboard_observations`, `leaderboard_snapshots`, `replays`, `replay_queue`, `replay_fetch_failures`, `activities`, `sync_state`, `poll_log`, `refresh_queue`, `fetch_failures`, `kv`, and the `search_index` materialized view (refreshed every 10 minutes).
+
+All timestamps are `timestamptz`. Momentum's own `createdAt` is stored as `momentum_created_at`, separate from the archive's `observed_at` / `first_seen_at` / `last_seen_at`.
+
+## Adding a gamemode
+
+1. Set `ARCHIVE_GAMEMODES=3,2` (comma separated Gamemode ids, see `backend/src/momentum/enums.ts`).
+2. `pnpm pm2:reload`. From then on runs in the new mode are stored, `maps-sweep` lists its maps, `maps-walk` marks maps with that leaderboard as archived, and `leaderboards-full-sweep` refreshes them.
+3. Run `pnpm cli backfill --phase runs` to pick up history for the new mode (the runs feed is global, so this re-walks everything; it is idempotent).
+
+The schema has no single gamemode assumption; every run, leaderboard and replay row carries its gamemode.
+
+## Development
+
+```sh
+pnpm install
+cp .env.example .env     # point at a dev Postgres + RustFS, NODE_ENV=development
+pnpm dev                 # backend with tsx watch on 5771 + vite on 5173 proxying /api
+pnpm test                # vitest: unit tests and PGlite backed integration tests, no services needed
+LIVE_TESTS=1 pnpm --filter backend test -- test/live.test.ts   # opt-in checks against the real API
+pnpm lint && pnpm typecheck && pnpm format:check
+pnpm --filter backend drizzle:generate   # after editing src/db/schema.ts
+```
+
+Tests never commit replay bytes: the live test keeps the downloaded replay in memory, and unit tests build synthetic headers.
+
+## Security notes
+
+- The repo is public. `.gitignore` excludes `.env`, logs, pm2 dumps and any `*.momtv`/`*.mtv`/`*.bsp`. `lefthook` runs `gitleaks protect --staged` on every commit. CI runs `pnpm audit` and gitleaks. Renovate keeps pinned dependencies current.
+- The HTTP API uses the read-only Postgres role; only the poller uses the read-write role. Queries are parameterized through Drizzle / tagged SQL.
+- S3 credentials never reach the browser; downloads stream through `/api/replays/:sha1/download` with `X-Content-Type-Options: nosniff` and `application/octet-stream`.
+- The frontend renders aliases, bios, descriptions and changelogs as text. Social links are built only for allowlisted hosts and validated handles, with `rel="noopener noreferrer nofollow"`.
+- No admin endpoints, no write endpoints, no auth. Maintenance is CLI only.
+
+## License
+
+MIT.
