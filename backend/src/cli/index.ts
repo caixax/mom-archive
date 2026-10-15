@@ -226,12 +226,16 @@ async function drainQueues(ctx: PollerContext, log: Logger, signal: AbortSignal)
   ];
   for (;;) {
     if (signal.aborted) break;
-    const rq = await replayQueueStats(ctx.db);
-    const depth = await refreshQueueDepth(ctx.db);
-    const refreshLeft = Object.values(depth).reduce((a, b) => a + b, 0);
-    const replaysLeft = rq.pending + rq.inFlight;
-    if (replaysLeft === 0 && refreshLeft === 0) break;
-    log.info('sync draining', { replays: replaysLeft, failed: rq.failed, refresh: refreshLeft });
+    try {
+      const rq = await replayQueueStats(ctx.db);
+      const depth = await refreshQueueDepth(ctx.db);
+      const refreshLeft = Object.values(depth).reduce((a, b) => a + b, 0);
+      const replaysLeft = rq.pending + rq.inFlight;
+      if (replaysLeft === 0 && refreshLeft === 0) break;
+      log.info('sync draining', { replays: replaysLeft, failed: rq.failed, refresh: refreshLeft });
+    } catch (e) {
+      log.warn('drain check failed, retrying', { error: errMsg(e) });
+    }
     await new Promise((r) => setTimeout(r, 10_000));
   }
   done.abort();

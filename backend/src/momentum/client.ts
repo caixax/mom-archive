@@ -210,7 +210,16 @@ export class MomentumClient {
         await sleep(1000 * 2 ** (attempt - 1));
         continue;
       }
-      const body = Buffer.from(await res.arrayBuffer());
+      // The body read can die mid stream (ECONNRESET); treat that as a network error too.
+      let body: Buffer;
+      try {
+        body = Buffer.from(await res.arrayBuffer());
+      } catch (e) {
+        this.record(null, errMsg(e));
+        if (attempt >= 4) throw new MomApiError(0, url, `body read error: ${errMsg(e)}`);
+        await sleep(1000 * 2 ** (attempt - 1));
+        continue;
+      }
       if (res.status === 429 || res.status >= 500) {
         this.record(res.status, `HTTP ${res.status}`);
         if (attempt >= 5)
@@ -425,7 +434,14 @@ export class MomentumClient {
       if (Number.isFinite(declared) && declared > maxBytes) {
         throw new MomApiError(res.status, url, `file too large: ${declared} bytes`);
       }
-      const bytes = Buffer.from(await res.arrayBuffer());
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(await res.arrayBuffer());
+      } catch (e) {
+        if (attempt >= 3) throw new MomApiError(0, url, `body read error: ${errMsg(e)}`);
+        await sleep(1000 * 2 ** attempt);
+        continue;
+      }
       if (bytes.length > maxBytes)
         throw new MomApiError(res.status, url, `file too large: ${bytes.length} bytes`);
       return {

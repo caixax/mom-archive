@@ -31,6 +31,8 @@ export interface BackfillCursor extends Record<string, unknown> {
 
 const PHASES: BackfillPhase[] = ['runs', 'users', 'maps', 'leaderboards', 'beta-runs', 'done'];
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export async function loadBackfillCursor(ctx: PollerContext): Promise<BackfillCursor> {
   const c = await getCursor<BackfillCursor>(ctx.db, 'backfill');
   return (
@@ -80,6 +82,7 @@ export async function runBackfill(
     usersNextId: c.usersNextId,
   });
 
+  let failures = 0;
   for (;;) {
     if (signal.aborted) break;
     if (c.phase === 'done') {
@@ -87,32 +90,49 @@ export async function runBackfill(
       await save(ctx, c);
       break;
     }
-    switch (c.phase) {
-      case 'runs':
-        await backfillRuns(ctx, c, signal);
-        break;
-      case 'users':
-        await backfillUsers(ctx, c, signal);
-        break;
-      case 'maps': {
-        const s = await mapsSweep(ctx);
-        log.info('backfill maps sweep done', { seen: s.seen, new: s.new });
-        const w = await mapsWalk(ctx);
-        log.info('backfill maps walk done', { seen: w.seen, found: w.new, note: w.note });
-        break;
+    // A phase that dies (network blip, API hiccup, database restart) is retried with
+    // backoff instead of killing the whole walk; the cursor keeps the position.
+    try {
+      switch (c.phase) {
+        case 'runs':
+          await backfillRuns(ctx, c, signal);
+          break;
+        case 'users':
+          await backfillUsers(ctx, c, signal);
+          break;
+        case 'maps': {
+          const s = await mapsSweep(ctx);
+          log.info('backfill maps sweep done', { seen: s.seen, new: s.new });
+          const w = await mapsWalk(ctx);
+          log.info('backfill maps walk done', { seen: w.seen, found: w.new, note: w.note });
+          break;
+        }
+        case 'leaderboards': {
+          const r = await leaderboardsSweep(ctx);
+          log.info('backfill leaderboards queued', { queued: r.new });
+          break;
+        }
+        case 'beta-runs': {
+          const r = await betaRuns(ctx);
+          log.info('backfill beta runs done', { seen: r.seen, new: r.new, note: r.note });
+          break;
+        }
+        default:
+          break;
       }
-      case 'leaderboards': {
-        const r = await leaderboardsSweep(ctx);
-        log.info('backfill leaderboards queued', { queued: r.new });
-        break;
-      }
-      case 'beta-runs': {
-        const r = await betaRuns(ctx);
-        log.info('backfill beta runs done', { seen: r.seen, new: r.new, note: r.note });
-        break;
-      }
-      default:
-        break;
+      failures = 0;
+    } catch (e) {
+      failures += 1;
+      const waitMs = Math.min(300_000, 10_000 * 2 ** (failures - 1));
+      log.warn('backfill step failed, retrying', {
+        phase: c.phase,
+        failures,
+        waitMs,
+        error: errMsg(e),
+      });
+      await save(ctx, c);
+      await sleep(waitMs);
+      continue;
     }
     if (signal.aborted) break;
     if (opts.only && c.phase === opts.only) {

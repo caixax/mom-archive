@@ -115,7 +115,15 @@ export class SteamClient {
         continue;
       }
       this.lastStatus = res.status;
-      const body = Buffer.from(await res.arrayBuffer());
+      let body: Buffer;
+      try {
+        body = Buffer.from(await res.arrayBuffer());
+      } catch (e) {
+        this.lastError = errMsg(e);
+        if (attempt >= 3) throw new Error(`steam api body read error: ${errMsg(e)}`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        continue;
+      }
       if (res.status === 429 || res.status >= 500) {
         this.lastError = `HTTP ${res.status}`;
         if (attempt >= 3) throw new Error(`steam api HTTP ${res.status}`);
