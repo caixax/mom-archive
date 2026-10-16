@@ -60,6 +60,8 @@ export interface UserSummary {
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   lastRunAt: string | null;
+  /** Current first places held, in the archived gamemodes */
+  wrs?: number;
   matchedOn?: string;
   matchedText?: string;
 }

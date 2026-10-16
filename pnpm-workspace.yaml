@@ -6,6 +6,9 @@ overrides:
 minimumReleaseAgeExclude:
   - '@aws-sdk/client-s3@3.1151.0'
   - '@fastify/helmet@13.2.0'
+  - '@caixax/momtv-player@0.1.1'
+  - '@caixax/momtv-viewer@0.1.0'
+  - '@caixax/momtv@0.1.0'
 allowBuilds:
   esbuild: true
   lefthook: true

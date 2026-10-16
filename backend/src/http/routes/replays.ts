@@ -9,6 +9,64 @@ import { execRows } from '../../db/index.js';
 
 const RANGE = /^bytes=\d*-\d*$/;
 
+export interface MapBsp {
+  url: string;
+  bspHash: string;
+  versionNum: number;
+  /** True when this is the very version the run was recorded on */
+  exactVersion: boolean;
+  /** True when the bytes are in the archive's own storage, not proxied from the CDN */
+  archived: boolean;
+}
+
+/**
+ * Finds the map version a replay should be played back on: the one whose bspHash the
+ * replay header recorded, or the current version when that one is not known here.
+ */
+async function resolveMapBsp(
+  db: HttpDeps['db'],
+  mapId: number | null,
+  headerMapHash: unknown,
+): Promise<MapBsp | null> {
+  const want =
+    typeof headerMapHash === 'string' && /^[0-9a-f]{40}$/i.test(headerMapHash)
+      ? headerMapHash.toLowerCase()
+      : null;
+  type Row = {
+    bsp_hash: string;
+    version_num: number;
+    archived: boolean;
+    fetchable: boolean;
+  };
+  const pick = (r: Row, exact: boolean): MapBsp => ({
+    url: `/api/maps/bsp/${r.bsp_hash}`,
+    bspHash: r.bsp_hash,
+    versionNum: r.version_num,
+    exactVersion: exact,
+    archived: r.archived,
+  });
+  if (want) {
+    const rows = (await execRows(
+      db,
+      sql`select bsp_hash, version_num, bsp_s3_key is not null as archived, download_url is not null as fetchable
+          from map_versions where bsp_hash = ${want} limit 1`,
+    )) as unknown as Row[];
+    const r = rows[0];
+    if (r && (r.archived || r.fetchable)) return pick(r, true);
+  }
+  if (mapId === null) return null;
+  const rows = (await execRows(
+    db,
+    sql`select v.bsp_hash, v.version_num, v.bsp_s3_key is not null as archived, v.download_url is not null as fetchable
+        from map_versions v join maps m on m.id = v.map_id
+        where v.map_id = ${mapId} and v.bsp_hash is not null
+        order by (v.id = m.current_version_id) desc, v.version_num desc limit 1`,
+  )) as unknown as Row[];
+  const r = rows[0];
+  if (!r || (!r.archived && !r.fetchable)) return null;
+  return pick(r, want !== null && r.bsp_hash === want);
+}
+
 export async function registerReplayRoutes(app: FastifyInstance, deps: HttpDeps): Promise<void> {
   const api = app.withTypeProvider<TypeBoxTypeProvider>();
   const db = deps.db;
@@ -53,11 +111,17 @@ export async function registerReplayRoutes(app: FastifyInstance, deps: HttpDeps)
         }
         return reply.code(404).send({ error: 'not_found', statusCode: 404 });
       }
+      const mapBsp = await resolveMapBsp(
+        db,
+        r.map_id === null || r.map_id === undefined ? null : Number(r.map_id),
+        (r.header as Record<string, unknown> | null)?.mapHash,
+      );
       return {
         sha1: r.sha1,
         bytes: r.bytes,
         downloadedAt: toIso(r.downloaded_at as Date),
         header: r.header,
+        mapBsp,
         headerOk: r.header_ok,
         headerIssues: r.header_issues ?? [],
         headerPlayerName: r.header_player_name,

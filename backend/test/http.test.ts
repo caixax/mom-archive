@@ -244,6 +244,47 @@ describe('http api', () => {
     expect(only.json().data.every((c: { type: string }) => c.type === 'alias')).toBe(true);
   });
 
+  it('records feed lists the current first place of each leaderboard', async () => {
+    const r = await app.inject({ url: '/api/records' });
+    expect(r.statusCode).toBe(200);
+    const data = r.json().data as {
+      userId: number;
+      mapName: string;
+      time: number;
+      gamemode: number;
+      trackType: number;
+      at: string;
+    }[];
+    expect(data.length).toBeGreaterThan(0);
+    expect(data.every((d) => d.gamemode === 3)).toBe(true);
+    expect(data[0]!.mapName).toBe('bhop_cooksassistant');
+    // Newest first
+    const dates = data.map((d) => new Date(d.at).getTime());
+    expect([...dates].sort((a, b) => b - a)).toEqual(dates);
+    const filtered = await app.inject({ url: '/api/records?style=9' });
+    expect(filtered.json().data.length).toBe(0);
+  });
+
+  it('users can be ordered by world records held and filtered by ban', async () => {
+    const r = await app.inject({ url: '/api/users?sort=wrs' });
+    expect(r.statusCode).toBe(200);
+    const data = r.json().data as { id: number; wrs: number }[];
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0]!.wrs).toBeGreaterThan(0);
+    const counts = data.map((d) => d.wrs);
+    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+    const banned = await app.inject({ url: '/api/users?banned=true' });
+    expect(banned.statusCode).toBe(200);
+    expect((banned.json().data as { bans: number }[]).every((u) => u.bans !== 0)).toBe(true);
+  });
+
+  it('map bsp is served for a known version hash and refused otherwise', async () => {
+    const miss = await app.inject({ url: '/api/maps/bsp/' + 'a'.repeat(40) });
+    expect(miss.statusCode).toBe(404);
+    const bad = await app.inject({ url: '/api/maps/bsp/not-a-hash' });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('replay metadata and download with range support', async () => {
     const sha = 'e38630bae44dedd6fd92d83a062d794d66e5fe08';
     const meta = await app.inject({ url: `/api/replays/${sha}` });

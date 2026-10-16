@@ -336,10 +336,10 @@
               <td class="num">{formatTime(e.time)}</td>
               <td class="mono small">{formatDate(e.momentumCreatedAt)}</td>
               <td>
-                {#if e.replayHash && e.replayArchived}<a
-                    href={`/api/replays/${e.replayHash}/download`}
-                    rel="external"
-                    download>download</a
+                {#if e.replayHash && e.replayArchived}<a href={`/watch/${e.replayHash}`}>view</a>
+                  <span class="muted">/</span>
+                  <a href={`/api/replays/${e.replayHash}/download`} rel="external" download
+                    >download</a
                   >
                 {:else if e.replayHash}<span class="muted small">not archived</span>
                 {:else}<span class="muted small">none</span>{/if}

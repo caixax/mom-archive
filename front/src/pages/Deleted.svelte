@@ -20,9 +20,14 @@
 <h1>Deleted runs</h1>
 <p class="muted">
   Runs whose leaderboard entry disappeared from Momentum after the archive had recorded it, newest
-  first. "removed" means the entry is gone from the board but the run still exists in Momentum's
-  history; "deleted" means the run itself answers 404. A player improving their time does not count:
-  that replaces the entry rather than removing it.
+  first. The marker in the first column says which: a crossed circle means the entry is gone from
+  the board but the run still exists in Momentum's history, a bin means the run itself answers 404.
+  Hover it for the date. A player improving their time does not count: that replaces the entry
+  rather than removing it.
+</p>
+<p class="muted small">
+  The replays stay playable and downloadable here. That is the point of the archive: Momentum
+  deleted the entry, the file did not have to go with it.
 </p>
 <div class="filters">
   <label

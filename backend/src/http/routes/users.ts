@@ -66,6 +66,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
               Type.Literal('alias'),
               Type.Literal('id'),
               Type.Literal('country'),
+              Type.Literal('wrs'),
             ]),
           ),
         }),
@@ -79,6 +80,12 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
         and (${role ?? null}::int is null or (u.roles & ${role ?? 0}) <> 0)
         and (${ban ?? null}::int is null or (u.bans & ${ban ?? 0}) <> 0)
         and (${banned ?? null}::boolean is null or (u.bans <> 0) = ${banned ?? false})`;
+      // Current first places per user. Only rank 1 rows are aggregated (one per
+      // leaderboard), so this stays cheap enough to sort the whole table by.
+      const wrJoin = sql`left join (
+          select user_id, count(*)::int as n from leaderboard_entries
+          where rank = 1 and removed_at is null group by user_id
+        ) w on w.user_id = u.id`;
       if (q && q.trim().length > 0) {
         const term = q.trim();
         const rows = (await execRows(
@@ -92,13 +99,15 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
             where kind = 'user' and text ilike '%' || ${term} || '%'
             group by entity_id
           )
-          select u.*, h.matched_on, h.matched_text, count(*) over() as total
+          select u.*, coalesce(w.n, 0) as wrs, h.matched_on, h.matched_text, count(*) over() as total
           from hits h join users u on u.id = h.id
+          ${wrJoin}
           where ${cond}
           order by h.prio, (lower(u.alias) = lower(${term})) desc, u.last_run_at desc nulls last
           limit ${take} offset ${off}
         `,
         )) as unknown as (typeof users.$inferSelect & {
+          wrs: number;
           matched_on: string;
           matched_text: string;
           total: number;
@@ -110,6 +119,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
           take,
           rows.map((r) => ({
             ...userSummary(rowToUser(r)),
+            wrs: Number(r.wrs),
             matchedOn: r.matched_on,
             matchedText: r.matched_text,
           })),
@@ -122,17 +132,20 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
             ? sql`u.id asc`
             : sort === 'country'
               ? sql`u.country asc nulls last, lower(u.alias) asc nulls last`
-              : sql`u.last_run_at desc nulls last, u.id desc`;
+              : sort === 'wrs'
+                ? sql`coalesce(w.n, 0) desc, u.last_run_at desc nulls last, u.id desc`
+                : sql`u.last_run_at desc nulls last, u.id desc`;
       const rows = (await execRows(
         db,
-        sql`select u.*, count(*) over() as total from users u where ${cond} order by ${order} limit ${take} offset ${off}`,
-      )) as unknown as (typeof users.$inferSelect & { total: number })[];
+        sql`select u.*, coalesce(w.n, 0) as wrs, count(*) over() as total
+            from users u ${wrJoin} where ${cond} order by ${order} limit ${take} offset ${off}`,
+      )) as unknown as (typeof users.$inferSelect & { wrs: number; total: number })[];
       const total = rows[0]?.total ? Number(rows[0].total) : 0;
       return paged(
         total,
         page,
         take,
-        rows.map((r) => userSummary(rowToUser(r))),
+        rows.map((r) => ({ ...userSummary(rowToUser(r)), wrs: Number(r.wrs) })),
       );
     },
   );

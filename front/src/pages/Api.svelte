@@ -60,6 +60,10 @@
       path: 'GET /api/maps/images/:id',
       desc: 'Archived map image (large variant) by image id.',
     },
+    {
+      path: 'GET /api/maps/bsp/:bspHash',
+      desc: 'The BSP of one map version, keyed by its bspHash, with Range support. Served from the archive when it has the file, streamed from the official CDN otherwise. This is what makes in browser playback possible: the official CDN sends no CORS headers.',
+    },
   ];
   const runsReplays: Endpoint[] = [
     {
@@ -72,7 +76,7 @@
     },
     {
       path: 'GET /api/replays/:sha1',
-      desc: 'Replay metadata by sha1: size, parsed header, header checks against the run, observed identity.',
+      desc: 'Replay metadata by sha1: size, parsed header, header checks against the run, observed identity, and mapBsp: the map version to play it back on, resolved from the hash the replay recorded.',
     },
     {
       path: 'GET /api/replays/:sha1/download',
@@ -80,6 +84,10 @@
     },
   ];
   const meta: Endpoint[] = [
+    {
+      path: 'GET /api/records?gamemode=&trackType=&style=&mapId=&page=',
+      desc: 'Current world records: the first place of every leaderboard, newest first, with the time, the track, the holder and the replay hash.',
+    },
     {
       path: 'GET /api/changes?type=&page=',
       desc: 'Global recent changes feed. type: alias, avatar, ban, role, removed_run, steam_name, steam_avatar, vac, new_wr, deleted_user, map.',

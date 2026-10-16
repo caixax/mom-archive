@@ -11,6 +11,7 @@ Live instance: https://momarchive.caixa.cc
 - [Architecture](#architecture)
 - [What is archived](#what-is-archived)
 - [What cannot be rescued](#what-cannot-be-rescued)
+- [Replay playback](#replay-playback)
 - [Momentum API quirks the archive works around](#momentum-api-quirks-the-archive-works-around)
 - [Repository layout](#repository-layout)
 - [Requirements](#requirements)
@@ -64,6 +65,14 @@ The UI and `/api/about` state the date the archive started watching. Nothing bef
 - Anything behind auth: notifications, reports, chat bans, admin activity, maps in private testing. With an optional `MOMENTUM_TOKEN` the archive also reads `/maps/submissions` for faster beta discovery; it is never required.
 - Steam history from before the archive first saw a player. Name and avatar history comes only from the archive's own Momentum and Steam polling plus SourceBans `Name` fields, never from scraping steamcommunity.com.
 
+## Replay playback
+
+Every archived replay has a "view" link that plays it in the browser on the map it was recorded on, with [momtv.js](https://github.com/caixax/momtv.js) (`@caixax/momtv-player`, loaded as its own chunk only on `/watch/:sha1`, so it costs nothing on every other page).
+
+The map has to come from this origin: the official API and CDN send no CORS headers, so the player cannot fetch a BSP itself. `GET /api/replays/:sha1` therefore resolves a `mapBsp` for every replay, matching the `mapHash` the replay header recorded against `map_versions.bsp_hash`, which means the archive plays back **the exact version the run was recorded on** whenever it observed that version, and says so in the UI when it has to fall back to a newer one. `GET /api/maps/bsp/:bspHash` then serves those bytes: from storage when `ARCHIVE_BSPS=true` archived them, otherwise streamed from the CDN with `Range` passed through (only ever the host in `MOMENTUM_CDN`, never an arbitrary stored URL).
+
+No game files are served: materials a map does not pack itself are drawn as flat colours. Playback needs WebGL2; the page says so and still offers the download when it is missing.
+
 ## Momentum API quirks the archive works around
 
 Verified against the live API and the public backend source (`momentum-mod/website`, `apps/backend/src/app`):
@@ -94,7 +103,7 @@ mom-archive/
       http/              Fastify app, plugins, routes, OpenAPI
       steam/             Steam Web API and SteamHistory.net clients
       cli/               backfill, reprocess-raw, verify-replays, requeue-replays, refresh-*, job
-    drizzle/             SQL migrations (0000_init, 0001_search_index)
+    drizzle/             SQL migrations (0000_init, 0001_search_index, 0002_wr_index)
     test/                vitest: unit tests + PGlite integration tests + opt-in live tests
   front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
   deploy/
@@ -202,6 +211,8 @@ Read only JSON under `/api`, ETag and `Cache-Control` on everything, OpenAPI at 
 | `GET /api/runs/:id`                                                                                       | run detail with replay header                                                                 |
 | `GET /api/replays/:sha1`, `/download`                                                                     | metadata; streamed `.momtv` with Range support, `Content-Disposition: attachment`             |
 | `GET /api/avatars/:hash`, `/api/maps/images/:id`                                                          | archived images                                                                               |
+| `GET /api/maps/bsp/:bspHash`                                                                              | one map version's BSP, Range support; from storage or streamed from the CDN, for the player   |
+| `GET /api/records?gamemode=&trackType=&style=&mapId=&page=`                                               | current world records, newest first                                                           |
 | `GET /api/search?q=`                                                                                      | one box: aliases (current and past), Steam names, SteamID64/3/2, Momentum id, map names       |
 | `GET /api/changes?type=alias\|avatar\|ban\|role\|removed_run\|steam_name\|steam_avatar\|vac\|new_wr\|map` | global feed                                                                                   |
 | `GET /api/stats`, `/api/status`, `/api/about`, `/api/health`                                              |                                                                                               |

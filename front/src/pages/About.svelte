@@ -99,8 +99,18 @@
 
 <h2>Watching replays</h2>
 <p>
-  Download the .momtv file, drop it into the game's replay folder and open it from the MomentumTV
-  menu. In browser playback is out of scope: the frame data format is not public.
+  Every archived replay has a "view" link that plays it here in the browser, on the map it was
+  recorded on, with
+  <a href="https://github.com/caixax/momtv.js" rel="external noopener noreferrer nofollow"
+    >momtv.js</a
+  >. The map comes from this site (the official CDN sends no CORS headers), and the archive serves
+  the very version the run was recorded on when it has it, so the geometry matches what the runner
+  played. Materials the map does not pack itself are drawn as flat colours: no game files are served
+  here.
+</p>
+<p>
+  For the real thing, download the .momtv file, drop it into the game's replay folder and open it
+  from the MomentumTV menu.
 </p>
 
 <h2>API</h2>

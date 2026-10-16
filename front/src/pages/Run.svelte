@@ -135,8 +135,9 @@
   <h2>Replay</h2>
   {#if run.replay}
     <p>
+      <a href={`/watch/${run.replay.sha1}`}><button class="primary">View demo</button></a>
       <a class="button" href={run.replay.downloadUrl} rel="external" download
-        ><button class="primary">Download .momtv ({formatBytes(run.replay.bytes)})</button></a
+        ><button>Download .momtv ({formatBytes(run.replay.bytes)})</button></a
       >
       <span class="muted small"
         >sha1 <span class="mono">{run.replay.sha1}</span>, archived {formatDate(

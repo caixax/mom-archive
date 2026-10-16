@@ -2,11 +2,14 @@
   import Avatar from '../components/Avatar.svelte';
   import { api, type ChangeRow, type Paged } from '../lib/api';
   import {
-    fieldLabel,
     formatBytes,
     formatDate,
     formatInt,
+    formatTime,
+    gamemodeName,
     relTime,
+    styleName,
+    trackName,
     valueLabel,
   } from '../lib/format';
 
@@ -25,8 +28,23 @@
     storage: { total?: number; bytes?: number; updatedAt?: string } | null;
   }
 
+  interface WrRow {
+    userId: number | null;
+    userAlias: string | null;
+    userAvatarHash: string | null;
+    mapId: number | null;
+    mapName: string | null;
+    runId: number | null;
+    gamemode: number | null;
+    trackType: number | null;
+    trackNum: number | null;
+    style: number | null;
+    time: number | null;
+    at: string;
+  }
+
   let stats = $state<Stats | null>(null);
-  let changes = $state<ChangeRow[]>([]);
+  let records = $state<WrRow[]>([]);
   let bans = $state<ChangeRow[]>([]);
   let error = $state<string | null>(null);
 
@@ -34,27 +52,13 @@
     api<Stats>('/api/stats')
       .then((s) => (stats = s))
       .catch((e) => (error = String(e.message)));
-    api<Paged<ChangeRow>>('/api/changes', { take: 40 })
-      .then((c) => (changes = c.data))
+    api<Paged<WrRow>>('/api/records', { take: 30 })
+      .then((r) => (records = r.data))
       .catch(() => undefined);
     api<Paged<ChangeRow>>('/api/changes', { type: 'ban', take: 8 })
       .then((c) => (bans = c.data))
       .catch(() => undefined);
   });
-
-  const typeLabel: Record<string, string> = {
-    alias: 'rename',
-    avatar: 'avatar',
-    ban: 'ban',
-    role: 'role',
-    removed_run: 'run removed',
-    steam_name: 'steam name',
-    steam_avatar: 'steam avatar',
-    vac: 'steam ban',
-    new_wr: 'new WR',
-    deleted_user: 'account hidden',
-    map: 'map',
-  };
 </script>
 
 <h1>Momentum Mod archive</h1>
@@ -115,39 +119,36 @@
 
   <div class="two-col">
     <section>
-      <h2>Recent changes</h2>
+      <h2>Latest world records</h2>
       <ul class="timeline">
-        {#each changes as c (c.type + c.at + String(c.userId) + String(c.runId) + c.field)}
+        {#each records as r (String(r.mapId) + String(r.gamemode) + String(r.trackType) + String(r.trackNum) + String(r.style) + String(r.userId))}
           <li>
-            <span class="when">{relTime(c.at)}</span>
+            <span class="when">{relTime(r.at)}</span>
             <span>
-              <span class="badge">{typeLabel[c.type] ?? c.type}</span>
-              {#if c.userId}
-                <Avatar hash={c.userAvatarHash} size="sm" />
-                <a href={`/users/${c.userId}`}>{c.userAlias ?? `user ${c.userId}`}</a>
-              {/if}
-              {#if c.type === 'removed_run'}
-                run <a href={`/runs/${c.runId}`} class="mono">#{c.runId}</a> on
-                <a href={`/maps/${c.mapId}`}>{c.mapName}</a> disappeared from the leaderboard
-              {:else if c.type === 'new_wr'}
-                set a world record on <a href={`/maps/${c.mapId}`}>{c.mapName}</a> (<a
-                  href={`/runs/${c.runId}`}
-                  class="mono">#{c.runId}</a
-                >)
-              {:else if c.type === 'map'}
-                <a href={`/maps/${c.mapId}`}>{c.mapName}</a>: {fieldLabel(c.field)}
-                <span class="mono">{valueLabel(c.field, c.oldValue)}</span>
-                to <span class="mono">{valueLabel(c.field, c.newValue)}</span>
-              {:else}
-                {fieldLabel(c.field)}: <span class="mono">{valueLabel(c.field, c.oldValue)}</span>
-                to <span class="mono">{valueLabel(c.field, c.newValue)}</span>
-              {/if}
+              <Avatar hash={r.userAvatarHash} size="sm" />
+              <a href={`/users/${r.userId}`}>{r.userAlias ?? `user ${r.userId}`}</a>
+              <span class="mono">{formatTime(r.time)}</span>
+              on <a href={`/maps/${r.mapId}`}>{r.mapName}</a>
+              <span class="muted small"
+                >{trackName(r.trackType ?? 0, r.trackNum ?? 1)}{#if r.style}, {styleName(
+                    r.style,
+                  )}{/if}{#if stats && stats.gamemodes.length > 1}, {gamemodeName(
+                    r.gamemode,
+                  )}{/if}</span
+              >
+              {#if r.runId}<a href={`/runs/${r.runId}`} class="mono small">#{r.runId}</a>{/if}
             </span>
           </li>
         {:else}
-          <li><span class="when"></span><span class="muted">No changes recorded yet.</span></li>
+          <li>
+            <span class="when"></span><span class="muted">No records recorded yet.</span>
+          </li>
         {/each}
       </ul>
+      <p class="muted small">
+        The current first place of every leaderboard, newest first. A record set before the archive
+        started watching carries Momentum's own date.
+      </p>
     </section>
     <div>
       <section>

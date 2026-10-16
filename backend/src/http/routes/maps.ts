@@ -1,4 +1,6 @@
-// /api/maps: list with filters, detail with history, leaderboard (current or as of a date), diff.
+// /api/maps: list with filters, detail with history, leaderboard (current or as of a date), diff,
+// and the BSP of a map version, which the in browser replay player needs same origin.
+import { Readable } from 'node:stream';
 import { Type } from '@sinclair/typebox';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -7,6 +9,7 @@ import { GamemodeName, LeaderboardTypeName, MapStatusName } from '../../momentum
 import { diffBoards } from '../../poller/diff.js';
 import {
   AnyObject,
+  contentDisposition,
   GamemodeQuery,
   IdParam,
   IsoDate,
@@ -24,6 +27,8 @@ import type { HttpDeps } from '../deps.js';
 import { execRows } from '../../db/index.js';
 
 type MapRow = Record<string, unknown>;
+
+const BSP_RANGE = /^bytes=\d*-\d*$/;
 
 function mapSummary(m: MapRow) {
   const status = Number(m.status);
@@ -161,6 +166,105 @@ export async function registerMapRoutes(app: FastifyInstance, deps: HttpDeps): P
       reply.header('content-type', 'image/jpeg');
       if (obj.contentLength !== undefined) reply.header('content-length', obj.contentLength);
       return reply.send(obj.body);
+    },
+  );
+
+  // The replay player runs in the browser and the official CDN sends no CORS headers,
+  // so the map has to come from this origin. Archived BSPs are served from storage;
+  // anything else is streamed from the CDN, with Range passed through either way.
+  api.get(
+    '/maps/bsp/:hash',
+    {
+      schema: {
+        tags: ['maps'],
+        summary: 'The BSP of a map version, by its bspHash. Supports Range requests.',
+        params: Type.Object({ hash: Type.String({ pattern: '^[0-9a-f]{40}$' }) }),
+      },
+    },
+    async (req, reply) => {
+      const rows = (await execRows(
+        db,
+        sql`
+        select v.id, v.version_num, v.download_url, v.bsp_s3_key, v.bsp_bytes, m.name as map_name
+        from map_versions v join maps m on m.id = v.map_id
+        where v.bsp_hash = ${req.params.hash} limit 1
+      `,
+      )) as unknown as {
+        id: string;
+        version_num: number;
+        download_url: string | null;
+        bsp_s3_key: string | null;
+        bsp_bytes: number | null;
+        map_name: string;
+      }[];
+      const v = rows[0];
+      if (!v) return reply.code(404).send({ error: 'not_found', statusCode: 404 });
+      const rangeHeader = req.raw.headers.range;
+      const range =
+        typeof rangeHeader === 'string' && BSP_RANGE.test(rangeHeader) ? rangeHeader : undefined;
+
+      reply.header('content-type', 'application/octet-stream');
+      reply.header('x-content-type-options', 'nosniff');
+      reply.header('accept-ranges', 'bytes');
+      // Keyed by content hash, so it can never go stale.
+      reply.header('cache-control', 'public, max-age=31536000, immutable');
+      reply.header(
+        'content-disposition',
+        contentDisposition(`${v.map_name}_v${v.version_num}.bsp`),
+      );
+
+      if (v.bsp_s3_key) {
+        const obj = await deps.storage.getStream(v.bsp_s3_key, range);
+        if (!obj) return reply.code(404).send({ error: 'not_found', statusCode: 404 });
+        if (obj.contentLength !== undefined) reply.header('content-length', obj.contentLength);
+        if (obj.contentRange) {
+          reply.header('content-range', obj.contentRange);
+          reply.code(206);
+        }
+        return reply.send(obj.body);
+      }
+
+      if (!v.download_url) return reply.code(404).send({ error: 'not_archived', statusCode: 404 });
+      // Only ever proxy the configured CDN, never an arbitrary stored URL.
+      let target: URL;
+      try {
+        target = new URL(v.download_url);
+      } catch {
+        return reply.code(404).send({ error: 'not_archived', statusCode: 404 });
+      }
+      if (target.host !== new URL(deps.cfg.MOMENTUM_CDN).host || target.protocol !== 'https:') {
+        deps.log.warn('refusing to proxy a non cdn map url', { host: target.host });
+        return reply.code(404).send({ error: 'not_archived', statusCode: 404 });
+      }
+      const upstream = await fetch(target, {
+        headers: {
+          'user-agent': deps.cfg.USER_AGENT,
+          ...(range ? { range } : {}),
+        },
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!upstream.ok && upstream.status !== 206) {
+        await upstream.body?.cancel();
+        return reply.code(upstream.status === 404 ? 404 : 502).send({
+          error: upstream.status === 404 ? 'not_found' : 'upstream_error',
+          statusCode: upstream.status === 404 ? 404 : 502,
+        });
+      }
+      if (!upstream.body) return reply.code(502).send({ error: 'upstream_error', statusCode: 502 });
+      const len = upstream.headers.get('content-length');
+      if (len) reply.header('content-length', len);
+      const cr = upstream.headers.get('content-range');
+      if (cr) {
+        reply.header('content-range', cr);
+        reply.code(206);
+      }
+      if (Number(len) > 100 * 1024 * 1024) {
+        deps.log.warn('map above cloudflare response limit', {
+          map: v.map_name,
+          bytes: Number(len),
+        });
+      }
+      return reply.send(Readable.fromWeb(upstream.body as never));
     },
   );
 

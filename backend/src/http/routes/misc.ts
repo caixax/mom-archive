@@ -7,11 +7,14 @@ import { GamemodeName } from '../../momentum/enums.js';
 import {
   AnyObject,
   archiveSince,
+  GamemodeQuery,
   offsetOf,
   PageQuery,
   paged,
+  StyleQuery,
   TakeQuery,
   toIso,
+  TrackTypeQuery,
   TtlCache,
 } from '../common.js';
 import type { HttpDeps } from '../deps.js';
@@ -186,6 +189,71 @@ export async function registerMiscRoutes(app: FastifyInstance, deps: HttpDeps): 
           field: r.field,
           oldValue: r.old_value,
           newValue: r.new_value,
+          at: toIso(r.at as Date),
+        })),
+      );
+    },
+  );
+
+  api.get(
+    '/records',
+    {
+      schema: {
+        tags: ['meta'],
+        summary: 'Current world records (first place of every leaderboard), newest first',
+        querystring: Type.Object({
+          gamemode: Type.Optional(GamemodeQuery),
+          trackType: Type.Optional(TrackTypeQuery),
+          style: Type.Optional(StyleQuery),
+          mapId: Type.Optional(Type.Integer({ minimum: 1 })),
+          page: PageQuery,
+          take: TakeQuery,
+        }),
+        response: { 200: AnyObject },
+      },
+    },
+    async (req) => {
+      const { gamemode, trackType, style, mapId, page, take } = req.query;
+      const rows = (await execRows(
+        db,
+        sql`
+        select e.user_id, u.alias as user_alias, u.avatar_hash as user_avatar_hash,
+               e.map_id, m.name as map_name, e.past_run_id as run_id,
+               e.gamemode, e.track_type, e.track_num, e.style, e.time, e.replay_hash,
+               (select 1 from replays r where r.sha1 = e.replay_hash) is not null as replay_archived,
+               coalesce(e.momentum_created_at, e.first_seen_at) as at,
+               count(*) over() as total
+        from leaderboard_entries e
+        join maps m on m.id = e.map_id
+        left join users u on u.id = e.user_id
+        where e.rank = 1 and e.removed_at is null
+          and e.gamemode in ${deps.cfg.ARCHIVE_GAMEMODES}
+          and (${gamemode ?? null}::int is null or e.gamemode = ${gamemode ?? null})
+          and (${trackType ?? null}::int is null or e.track_type = ${trackType ?? null})
+          and (${style ?? null}::int is null or e.style = ${style ?? null})
+          and (${mapId ?? null}::int is null or e.map_id = ${mapId ?? null})
+        order by at desc limit ${take} offset ${offsetOf(page, take)}
+      `,
+      )) as unknown as Record<string, unknown>[];
+      const total = rows[0]?.total ? Number(rows[0].total) : 0;
+      return paged(
+        total,
+        page,
+        take,
+        rows.map((r) => ({
+          userId: r.user_id,
+          userAlias: r.user_alias,
+          userAvatarHash: r.user_avatar_hash,
+          mapId: r.map_id,
+          mapName: r.map_name,
+          runId: r.run_id === null || r.run_id === undefined ? null : Number(r.run_id),
+          gamemode: r.gamemode,
+          trackType: r.track_type,
+          trackNum: r.track_num,
+          style: r.style,
+          time: r.time,
+          replayHash: r.replay_hash,
+          replayArchived: Boolean(r.replay_archived),
           at: toIso(r.at as Date),
         })),
       );

@@ -8,7 +8,8 @@
   let result = $state<Paged<UserSummary> | null>(null);
   let error = $state<string | null>(null);
   const q = $derived(route.query.get('q') ?? '');
-  const sort = $derived(route.query.get('sort') ?? 'recent');
+  // Most world records first: who holds the mode, not who ran last.
+  const sort = $derived(route.query.get('sort') ?? 'wrs');
   const country = $derived(route.query.get('country') ?? '');
   const role = $derived(route.query.get('role') ?? '');
   // One select drives two API params: 'any' means banned=true, a bit means ban=<bit>
@@ -50,8 +51,9 @@
 
 <h1>Users</h1>
 <p class="muted">
-  Every player the archive has seen. Search matches current aliases, past aliases, Steam names and
-  names recorded by SourceBans.
+  Every player the archive has seen, most world records first. Search matches current aliases, past
+  aliases, Steam names and names recorded by SourceBans. "WRs" counts the leaderboards where the
+  player currently sits first.
 </p>
 <form class="filters" onsubmit={submit}>
   <input type="search" placeholder="alias, old alias" bind:value={qInput} maxlength="100" />
@@ -91,6 +93,7 @@
       value={sort}
       onchange={(e) => setQuery({ sort: (e.target as HTMLSelectElement).value, page: 1 })}
     >
+      <option value="wrs">world records</option>
       <option value="recent">recent activity</option>
       <option value="alias">alias</option>
       <option value="id">momentum id</option>
@@ -105,9 +108,9 @@
     <table>
       <thead
         ><tr
-          ><th></th><th>Alias</th><th>Matched</th><th>Country</th><th>Roles / bans</th><th
-            >Last run</th
-          ><th>Momentum id</th></tr
+          ><th></th><th>Alias</th><th class="num">WRs</th><th>Matched</th><th>Country</th><th
+            >Roles / bans</th
+          ><th>Last run</th><th>Momentum id</th></tr
         ></thead
       >
       <tbody>
@@ -119,6 +122,7 @@
                   class="badge err">hidden</span
                 >{/if}</td
             >
+            <td class="num">{u.wrs ? u.wrs : ''}</td>
             <td class="small muted"
               >{#if u.matchedOn && u.matchedOn !== 'alias'}{u.matchedOn.replace('_', ' ')}:
                 <span class="mono">{u.matchedText}</span>{/if}</td
@@ -134,7 +138,7 @@
             <td class="mono small">{u.id}</td>
           </tr>
         {:else}
-          <tr><td colspan="7" class="muted">No users match.</td></tr>
+          <tr><td colspan="8" class="muted">No users match.</td></tr>
         {/each}
       </tbody>
     </table>
