@@ -10,12 +10,14 @@ export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export interface DbPools {
   rw: Db;
   ro: Db;
+  /** Narrow write role for the admin tables. Null when the admin panel is off. */
+  app: Db | null;
   rwSql: Sql;
   roSql: Sql;
   close(): Promise<void>;
 }
 
-export function createPools(urls: { rw: string; ro: string }): DbPools {
+export function createPools(urls: { rw: string; ro: string; app?: string }): DbPools {
   const rwSql = postgres(urls.rw, {
     max: 16,
     idle_timeout: 60,
@@ -30,13 +32,27 @@ export function createPools(urls: { rw: string; ro: string }): DbPools {
     prepare: true,
     onnotice: () => undefined,
   });
+  const appSql = urls.app
+    ? postgres(urls.app, {
+        max: 8,
+        idle_timeout: 60,
+        connect_timeout: 10,
+        prepare: true,
+        onnotice: () => undefined,
+      })
+    : null;
   return {
     rw: drizzle(rwSql, { schema }),
     ro: drizzle(roSql, { schema }),
+    app: appSql ? drizzle(appSql, { schema }) : null,
     rwSql,
     roSql,
     async close() {
-      await Promise.all([rwSql.end({ timeout: 5 }), roSql.end({ timeout: 5 })]);
+      await Promise.all([
+        rwSql.end({ timeout: 5 }),
+        roSql.end({ timeout: 5 }),
+        ...(appSql ? [appSql.end({ timeout: 5 })] : []),
+      ]);
     },
   };
 }

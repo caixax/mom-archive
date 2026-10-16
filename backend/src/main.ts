@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     poller: cfg.POLLER_ENABLED,
     steam: cfg.steamEnabled,
     steamhistory: cfg.steamHistoryEnabled,
+    admin: cfg.adminEnabled ? cfg.ADMIN_STEAM_IDS.length : false,
   });
 
   await runMigrations(rt.pools.rw);
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   const app = await buildApp({
     cfg,
     db: rt.pools.ro,
+    dbApp: rt.pools.app,
     dbSql: rt.pools.roSql,
     storage: rt.storage,
     schemaVersion: schema,

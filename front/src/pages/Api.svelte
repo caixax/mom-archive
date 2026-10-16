@@ -100,6 +100,10 @@
       path: 'GET /api/status',
       desc: 'Component health, the same data as the status page. Cached 15 seconds.',
     },
+    {
+      path: 'GET /api/announcements',
+      desc: 'Active site banners, as plain text with a level and a scope. Render them as text.',
+    },
     { path: 'GET /api/about', desc: 'What this instance archives and since when.' },
     { path: 'GET /api/health', desc: 'Liveness: { ok, schema }.' },
     {
@@ -122,6 +126,11 @@
 
 <h2>Basics</h2>
 <ul>
+  <li>
+    <strong>No key, no account:</strong> there is nothing to sign up for and nothing to authenticate.
+    The only routes that are not public belong to the archive owner's own panel, and they are left out
+    of the spec above.
+  </li>
   <li>
     <strong>Rate limit:</strong> 240 requests per minute per IP. Going over returns
     <span class="mono">429</span> with <span class="mono">retry-after</span> and

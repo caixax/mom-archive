@@ -14,6 +14,7 @@
   import Status from './pages/Status.svelte';
   import Search from './pages/Search.svelte';
   import NotFound from './pages/NotFound.svelte';
+  import Banners from './components/Banners.svelte';
 
   installRouter();
 
@@ -43,6 +44,13 @@
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type Page = { c: Component<any>; params: Record<string, string> };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let adminPromise: Promise<Component<any>> | null = null;
+  function loadAdmin() {
+    adminPromise ??= import('./pages/Admin.svelte').then((m) => m.default);
+    return adminPromise;
+  }
   const page = $derived.by((): Page => {
     const p = route.path;
     let m: Record<string, string> | null;
@@ -82,9 +90,21 @@
 </header>
 
 <main>
-  {#key route.path}
-    <page.c {...page.params} />
-  {/key}
+  {#if route.path === '/admin'}
+    <!-- The owner's panel: not in the nav, not in the public bundle either. -->
+    {#await loadAdmin()}
+      <p class="muted">Loading.</p>
+    {:then Admin}
+      <Admin />
+    {:catch}
+      <p class="error">The admin panel could not be loaded.</p>
+    {/await}
+  {:else}
+    <Banners home={route.path === '/'} />
+    {#key route.path}
+      <page.c {...page.params} />
+    {/key}
+  {/if}
 </main>
 
 <footer>

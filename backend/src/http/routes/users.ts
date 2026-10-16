@@ -256,6 +256,12 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
       `,
       )) as unknown as Record<string, unknown>[];
 
+      // Notes the archive owner pinned to this profile. Plain text, rendered as text.
+      const notices = (await execRows(
+        db,
+        sql`select id, body, level from user_notices where user_id = ${id} and active = true order by id desc limit 10`,
+      )) as unknown as Record<string, unknown>[];
+
       return {
         ...userSummary(u),
         steamId3: steamId ? steamId64ToSteam3(steamId) : null,
@@ -337,6 +343,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
           nameAtBan: b.name_at_ban,
         })),
         credits,
+        notices: notices.map((n) => ({ id: Number(n.id), body: n.body, level: n.level })),
       };
     },
   );

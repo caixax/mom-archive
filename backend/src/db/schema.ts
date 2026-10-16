@@ -650,7 +650,115 @@ export const kv = pgTable('kv', {
   updatedAt: ts('updated_at').notNull(),
 });
 
+// Admin side. These are the only tables the HTTP process may write, through the
+// momarchive_app role. Nothing here can change what the archive observed.
+
+/** Admin sessions. The cookie holds a random token; only its HMAC lands here. */
+export const adminSessions = pgTable(
+  'admin_sessions',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    steamId: text('steam_id').notNull(),
+    createdAt: ts('created_at').notNull(),
+    lastSeenAt: ts('last_seen_at').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+    revokedAt: ts('revoked_at'),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [
+    uniqueIndex('admin_sessions_token_idx').on(t.tokenHash),
+    index('admin_sessions_steam_idx').on(t.steamId, t.createdAt),
+  ],
+);
+
+/** Banners shown on the site. Rendered as text, never as HTML. */
+export const announcements = pgTable(
+  'announcements',
+  {
+    id: serial('id').primaryKey(),
+    body: text('body').notNull(),
+    /** info | warning | critical */
+    level: text('level').notNull().default('info'),
+    /** home | all */
+    scope: text('scope').notNull().default('home'),
+    startsAt: ts('starts_at'),
+    endsAt: ts('ends_at'),
+    active: boolean('active').notNull().default(true),
+    createdAt: ts('created_at').notNull(),
+    updatedAt: ts('updated_at').notNull(),
+    createdBy: text('created_by'),
+  },
+  (t) => [index('announcements_active_idx').on(t.active, t.scope)],
+);
+
+/** A note the owner pinned to one archived user's page. Text only. */
+export const userNotices = pgTable(
+  'user_notices',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id').notNull(),
+    body: text('body').notNull(),
+    level: text('level').notNull().default('info'),
+    active: boolean('active').notNull().default(true),
+    createdAt: ts('created_at').notNull(),
+    updatedAt: ts('updated_at').notNull(),
+    createdBy: text('created_by'),
+  },
+  (t) => [index('user_notices_user_idx').on(t.userId, t.active)],
+);
+
+/** Every admin action, so the panel can never quietly change anything. */
+export const adminAudit = pgTable(
+  'admin_audit',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    at: ts('at').notNull(),
+    steamId: text('steam_id').notNull(),
+    action: text('action').notNull(),
+    target: text('target'),
+    details: jsonb('details').$type<Record<string, unknown>>(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [index('admin_audit_at_idx').on(t.at)],
+);
+
+/** One row per HTTP request, buffered and inserted in batches. Pruned by retention. */
+export const requestLog = pgTable(
+  'request_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    at: ts('at').notNull(),
+    ip: text('ip'),
+    country: text('country'),
+    method: text('method').notNull(),
+    /** Exactly what was asked for */
+    path: text('path').notNull(),
+    /** The same path with ids, hashes and uuids collapsed, for grouping */
+    route: text('route').notNull(),
+    query: text('query'),
+    status: integer('status').notNull(),
+    ms: integer('ms').notNull(),
+    bytes: integer('bytes'),
+    userAgent: text('user_agent'),
+    referer: text('referer'),
+    admin: boolean('admin').notNull().default(false),
+  },
+  (t) => [
+    index('request_log_at_idx').on(t.at),
+    index('request_log_ip_idx').on(t.ip, t.at),
+    index('request_log_route_idx').on(t.route, t.at),
+  ],
+);
+
 export const schemaTables = {
+  adminSessions,
+  announcements,
+  userNotices,
+  adminAudit,
+  requestLog,
   users,
   userSnapshots,
   userFieldChanges,

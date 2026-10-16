@@ -120,6 +120,13 @@
   <a href="/api/openapi.json" rel="external">/api/openapi.json</a> for the machine readable spec.
 </p>
 
+<h2>Banners and profile notes</h2>
+<p>
+  A banner at the top of a page, or a note on a player's page, is written by whoever runs this
+  archive, never by Momentum and never by the player. They are plain text and say nothing the
+  archive observed: the data itself is always the tables and timelines below them.
+</p>
+
 <h2>Contact</h2>
 <p>
   Questions, takedown requests or data corrections:

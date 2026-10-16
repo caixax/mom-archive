@@ -21,6 +21,11 @@ export interface HttpDeps {
   cfg: Config;
   /** read-only pool */
   db: Db;
+  /**
+   * Narrow write pool for the admin tables only (sessions, announcements, user
+   * notices, audit, request log). Null when the admin panel is not configured.
+   */
+  dbApp?: Db | null;
   dbSql: Sql;
   storage: Storage;
   status: StatusSource;

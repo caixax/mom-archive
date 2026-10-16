@@ -89,6 +89,8 @@
       nameAtBan: string | null;
     }[];
     credits: { map_id: number; map_name: string; type: number; description: string | null }[];
+    /** Notes the archive owner pinned to this profile. Plain text. */
+    notices?: { id: number; body: string; level: string }[];
   }
   interface FollowEvent {
     id: number;
@@ -145,6 +147,9 @@
 {:else if !user}
   <p class="muted">Loading...</p>
 {:else}
+  {#each user.notices ?? [] as n (n.id)}
+    <div class="notice-pin {n.level}" role="note">{n.body}</div>
+  {/each}
   <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
     <Avatar hash={user.avatarHash} size="lg" alt="" />
     <div>
@@ -472,3 +477,23 @@
     />
   {/if}
 {/if}
+
+<style>
+  .notice-pin {
+    margin: 0 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    background: var(--bg-2);
+    white-space: pre-wrap;
+  }
+  .notice-pin.info {
+    border-left-color: var(--accent);
+  }
+  .notice-pin.warning {
+    border-left-color: #d9a406;
+  }
+  .notice-pin.critical {
+    border-left-color: var(--removed);
+  }
+</style>

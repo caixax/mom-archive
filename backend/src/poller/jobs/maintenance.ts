@@ -54,7 +54,11 @@ export async function storageSummary(ctx: PollerContext): Promise<JobResult> {
   return { seen: total, note: `bytes=${bytes}` };
 }
 
-/** Removes refresh items that keep failing and poll_log rows older than 90 days. */
+/**
+ * Removes refresh items that keep failing, poll_log rows older than 90 days,
+ * request log rows past their retention (they hold IPs, so the window is short
+ * on purpose) and admin sessions that died long ago.
+ */
 export async function housekeeping(ctx: PollerContext): Promise<JobResult> {
   const a = (await execRows(
     ctx.db,
@@ -64,5 +68,16 @@ export async function housekeeping(ctx: PollerContext): Promise<JobResult> {
     ctx.db,
     sql`delete from refresh_queue where attempts >= 8 returning id`,
   )) as unknown as unknown[];
-  return { seen: a.length + b.length, note: `poll_log=${a.length} refresh=${b.length}` };
+  const c = (await execRows(
+    ctx.db,
+    sql`delete from request_log where at < now() - make_interval(days => ${ctx.cfg.REQUEST_LOG_DAYS}) returning id`,
+  )) as unknown as unknown[];
+  const d = (await execRows(
+    ctx.db,
+    sql`delete from admin_sessions where expires_at < now() - interval '30 days' returning id`,
+  )) as unknown as unknown[];
+  return {
+    seen: a.length + b.length + c.length + d.length,
+    note: `poll_log=${a.length} refresh=${b.length} requests=${c.length} sessions=${d.length}`,
+  };
 }

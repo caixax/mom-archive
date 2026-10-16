@@ -32,7 +32,11 @@ export function bootstrap(): Runtime {
     file: cfg.NODE_ENV !== 'test',
   });
   const log = getLogger('app');
-  const pools = createPools({ rw: cfg.DATABASE_URL_RW, ro: cfg.DATABASE_URL_RO });
+  const pools = createPools({
+    rw: cfg.DATABASE_URL_RW,
+    ro: cfg.DATABASE_URL_RO,
+    app: cfg.adminEnabled ? cfg.DATABASE_URL_APP : undefined,
+  });
   const storage = new Storage({
     endpoint: cfg.S3_ENDPOINT,
     region: cfg.S3_REGION,

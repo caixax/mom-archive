@@ -1,6 +1,6 @@
 # mom-archive
 
-A public, self-hosted archive of Momentum Mod leaderboard data for the Bhop HL1 gamemode. Think "Wayback Machine for Momentum Mod": it polls the official public API on a schedule, stores every run it observes, downloads every replay file before Momentum deletes it, and keeps a full change history of users (alias, avatar, bio, socials, roles, bans, stats), maps, leaderboards and follows. Everything is public, read only, no login.
+A public, self-hosted archive of Momentum Mod leaderboard data for the Bhop HL1 gamemode. Think "Wayback Machine for Momentum Mod": it polls the official public API on a schedule, stores every run it observes, downloads every replay file before Momentum deletes it, and keeps a full change history of users (alias, avatar, bio, socials, roles, bans, stats), maps, leaderboards and follows. Everything the archive collects is public and read only, with no login and no API key.
 
 Momentum itself keeps none of this history: only the current PB replay of each leaderboard survives (the previous one is deleted the moment a player improves), alias and avatar are single overwritten columns, and runs deleted by admins vanish from the public API without a trace. The archive exists to preserve what Momentum throws away.
 
@@ -12,6 +12,7 @@ Live instance: https://momarchive.caixa.cc
 - [What is archived](#what-is-archived)
 - [What cannot be rescued](#what-cannot-be-rescued)
 - [Replay playback](#replay-playback)
+- [The owner's panel](#the-owners-panel)
 - [Momentum API quirks the archive works around](#momentum-api-quirks-the-archive-works-around)
 - [Repository layout](#repository-layout)
 - [Requirements](#requirements)
@@ -73,6 +74,31 @@ The map has to come from this origin: the official API and CDN send no CORS head
 
 No game files are served: materials a map does not pack itself are drawn as flat colours. Playback needs WebGL2; the page says so and still offers the download when it is missing.
 
+## The owner's panel
+
+There is no public account system: no sign up, no sign in link, no API keys, and the data API stays open to everyone. The one exception is `/admin`, which is not linked from the site and is reached by typing the path.
+
+Sign in is Steam OpenID 2.0, which needs no API key. What the flow proves is which Steam account you are; whether that account is the owner is answered only by `ADMIN_STEAM_IDS` in the environment, and a successful Steam login by anyone else stores nothing and creates no session. Leave `APP_SECRET`, `ADMIN_STEAM_IDS` and `DATABASE_URL_APP` empty and the panel does not exist: `/api/admin/*` and the sign in routes are never registered.
+
+The panel carries:
+
+- **Overview**: row counts for every table, job results and failures, sync cursors, storage totals, runs first seen per day.
+- **Traffic**: requests, unique IPs, user agents, countries, status codes and latency over 1 hour to 30 days; top IPs, routes, agents and countries; and the raw log with filters by IP, route, status and user agent.
+- **Announcements**: a banner on the home page or on every page, with a level and an optional start and end time.
+- **Profile notices**: a note pinned to one archived player's page.
+- **Audit**: every action taken in the panel, with IP and user agent.
+- **Sessions**: every session with its IP, last use and expiry, revocable one by one or all at once.
+
+How it is kept honest:
+
+- **The archive cannot be written from the web at all.** The HTTP process reads with `momarchive_ro` and writes only through `momarchive_app`, whose grants (issued by migration `0003`) cover exactly five tables: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`. No hole in the API, however bad, can rewrite a run, a replay or a user. Only the poller, which takes no input from the internet, has the read write role.
+- Sessions are a 256 bit random token in a `__Host-` prefixed `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only an HMAC of it, so a dump of the table cannot be replayed as a login. Sessions have an idle timeout and an absolute expiry, are revocable, and die the moment a SteamID leaves `ADMIN_STEAM_IDS`.
+- The login round trip is verified against Steam with `check_authentication`; nothing in the callback query string is trusted before that. The `return_to` Steam signs is compared with what this server generated, and it carries a state token that has to match a short lived cookie, so a login cannot be started or replayed from somewhere else.
+- Every write needs the session **and** an `Origin` equal to `PUBLIC_BASE_URL` **and** an `x-csrf-token` derived from the session, compared in constant time.
+- Announcement and notice bodies are plain text with a length cap, rendered as text by the frontend like every other string the archive did not write. There is no HTML anywhere in them.
+- nginx only lets `POST`, `PATCH` and `DELETE` through to `/api/auth/` and `/api/admin/`, under their own `limit_req` zone; everything else stays `GET` and `HEAD` only, and the backend enforces the same list again.
+- The request log holds IPs, so it is a rolling window: `REQUEST_LOG_DAYS` (30 by default) and the daily housekeeping job delete the rest. Set `REQUEST_LOG_ENABLED=false` to record nothing.
+
 ## Momentum API quirks the archive works around
 
 Verified against the live API and the public backend source (`momentum-mod/website`, `apps/backend/src/app`):
@@ -103,13 +129,13 @@ mom-archive/
       http/              Fastify app, plugins, routes, OpenAPI
       steam/             Steam Web API and SteamHistory.net clients
       cli/               backfill, reprocess-raw, verify-replays, requeue-replays, refresh-*, job
-    drizzle/             SQL migrations (0000_init, 0001_search_index, 0002_wr_index)
+    drizzle/             SQL migrations (0000_init, 0001_search_index, 0002_wr_index, 0003_admin)
     test/                vitest: unit tests + PGlite integration tests + opt-in live tests
   front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
   deploy/
     nginx.momarchive.conf      listens 127.0.0.1:5770, serves /var/www/momarchive, proxies /api/ to 127.0.0.1:5771
     cloudflared.example.yml    ingress: momarchive.caixa.cc -> http://127.0.0.1:5770
-    postgres-roles.sql         creates momarchive_rw and momarchive_ro
+    postgres-roles.sql         creates momarchive_rw, momarchive_ro and momarchive_app
   ecosystem.config.cjs         pm2: momarchive-backend only
   .env.example
   lefthook.yml                 pre-commit: gitleaks, dash check, prettier
@@ -213,17 +239,20 @@ Read only JSON under `/api`, ETag and `Cache-Control` on everything, OpenAPI at 
 | `GET /api/avatars/:hash`, `/api/maps/images/:id`                                                          | archived images                                                                               |
 | `GET /api/maps/bsp/:bspHash`                                                                              | one map version's BSP, Range support; from storage or streamed from the CDN, for the player   |
 | `GET /api/records?gamemode=&trackType=&style=&mapId=&page=`                                               | current world records, newest first                                                           |
+| `GET /api/announcements`                                                                                  | active site banners, plain text                                                               |
 | `GET /api/search?q=`                                                                                      | one box: aliases (current and past), Steam names, SteamID64/3/2, Momentum id, map names       |
 | `GET /api/changes?type=alias\|avatar\|ban\|role\|removed_run\|steam_name\|steam_avatar\|vac\|new_wr\|map` | global feed                                                                                   |
 | `GET /api/stats`, `/api/status`, `/api/about`, `/api/health`                                              |                                                                                               |
 
-Every route has a JSON schema; ids are integers, `page`/`take` are bounded, `q` is capped at 100 characters, dates are parsed. Errors are generic (`{ error, statusCode, requestId }`), never database text. Rate limit: 240 requests/minute per client IP. Only `GET` and `HEAD` are accepted.
+Every route has a JSON schema; ids are integers, `page`/`take` are bounded, `q` is capped at 100 characters, dates are parsed. Errors are generic (`{ error, statusCode, requestId }`), never database text. Rate limit: 240 requests/minute per client IP. Only `GET` and `HEAD` are accepted, the owner's `/api/auth/` and `/api/admin/` routes aside, and those are kept out of the OpenAPI document.
 
 ## Database
 
 Postgres 16, Drizzle ORM, migrations in `backend/drizzle` applied on boot (and by `pnpm migrate`). Main tables:
 
 `users`, `user_snapshots`, `user_field_changes`, `avatars`, `steam_profiles`, `steam_profile_snapshots`, `steam_field_changes`, `steam_name_history`, `steam_avatar_history`, `steam_sourcebans`, `follows`, `follow_events`, `maps`, `map_snapshots`, `map_field_changes`, `map_versions`, `map_images`, `map_credits`, `leaderboards`, `runs`, `leaderboard_entries`, `leaderboard_observations`, `leaderboard_snapshots`, `replays`, `replay_queue`, `replay_fetch_failures`, `activities`, `sync_state`, `poll_log`, `refresh_queue`, `fetch_failures`, `kv`, and the `search_index` materialized view (refreshed every 10 minutes).
+
+Five more tables belong to the panel and are the only ones the HTTP process can write: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`.
 
 All timestamps are `timestamptz`. Momentum's own `createdAt` is stored as `momentum_created_at`, separate from the archive's `observed_at` / `first_seen_at` / `last_seen_at`.
 
@@ -252,10 +281,10 @@ Tests never commit replay bytes: the live test keeps the downloaded replay in me
 ## Security notes
 
 - The repo is public. `.gitignore` excludes `.env`, logs, pm2 dumps and any `*.momtv`/`*.mtv`/`*.bsp`. `lefthook` runs `gitleaks protect --staged` on every commit. CI runs `pnpm audit` and gitleaks. Renovate keeps pinned dependencies current.
-- The HTTP API uses the read-only Postgres role; only the poller uses the read-write role. Queries are parameterized through Drizzle / tagged SQL.
+- The HTTP API reads with the read-only Postgres role; only the poller uses the read-write role. Queries are parameterized through Drizzle / tagged SQL.
 - S3 credentials never reach the browser; downloads stream through `/api/replays/:sha1/download` with `X-Content-Type-Options: nosniff` and `application/octet-stream`.
 - The frontend renders aliases, bios, descriptions and changelogs as text. Social links are built only for allowlisted hosts and validated handles, with `rel="noopener noreferrer nofollow"`.
-- No admin endpoints, no write endpoints, no auth. Maintenance is CLI only.
+- The data API has no write endpoints and no auth, and maintenance is CLI only. The single exception is the owner's panel at `/admin`: see [The owner's panel](#the-owners-panel). It writes through a third role that can only touch its own five tables, so the archive itself stays unwritable from the web, and it does not exist at all unless `APP_SECRET`, `ADMIN_STEAM_IDS` and `DATABASE_URL_APP` are set.
 
 ## License
 

@@ -1,5 +1,6 @@
 // Fastify app: read only JSON API under /api with security plugins from the start.
 import { randomUUID } from 'node:crypto';
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import etag from '@fastify/etag';
 import helmet from '@fastify/helmet';
@@ -8,7 +9,11 @@ import swagger from '@fastify/swagger';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { errMsg } from '../logger.js';
+import { createGuard, clientIp, userAgent } from './auth/guard.js';
 import type { HttpDeps } from './deps.js';
+import { normalizePath, RequestLogger } from './request-log.js';
+import { registerAdminRoutes } from './routes/admin.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerMapRoutes } from './routes/maps.js';
 import { registerMiscRoutes } from './routes/misc.js';
 import { registerReplayRoutes } from './routes/replays.js';
@@ -17,6 +22,18 @@ import { registerSearchRoutes } from './routes/search.js';
 import { registerUserRoutes } from './routes/users.js';
 
 export type App = FastifyInstance;
+
+/** Paths that accept more than GET and HEAD, and the methods each one takes. */
+const WRITABLE: { prefix: string; methods: readonly string[] }[] = [
+  { prefix: '/api/auth/', methods: ['GET', 'HEAD', 'POST'] },
+  { prefix: '/api/admin/', methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'] },
+];
+
+function allowedMethods(url: string): readonly string[] {
+  const path = url.split('?')[0] ?? '';
+  for (const w of WRITABLE) if (path.startsWith(w.prefix)) return w.methods;
+  return ['GET', 'HEAD'];
+}
 
 export async function buildApp(deps: HttpDeps): Promise<App> {
   const app = Fastify({
@@ -78,6 +95,9 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
 
   await app.register(etag, { weak: true });
 
+  // Cookies are only ever used by the owner's session; nothing is set for visitors.
+  await app.register(cookie, {});
+
   await app.register(swagger, {
     openapi: {
       openapi: '3.1.0',
@@ -92,11 +112,15 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
     hideUntagged: false,
   });
 
+  const guard = createGuard({ cfg: deps.cfg, dbApp: deps.dbApp ?? null, log: deps.log });
+
   app.addHook('onRequest', async (req, reply) => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      reply.header('allow', 'GET, HEAD');
+    const allow = allowedMethods(req.url);
+    if (!allow.includes(req.method)) {
+      reply.header('allow', allow.join(', '));
       return reply.code(405).send({ error: 'method_not_allowed', statusCode: 405 });
     }
+    (req as { startedAt?: number }).startedAt = Date.now();
     return undefined;
   });
 
@@ -107,6 +131,39 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
     reply.header('x-request-id', req.id);
     return payload;
   });
+
+  // Request log. Buffered and flushed in batches by the app role, so it never
+  // slows a response down and never touches the archive tables.
+  const requestLogger =
+    deps.cfg.REQUEST_LOG_ENABLED && deps.dbApp
+      ? new RequestLogger({ db: deps.dbApp, log: deps.log })
+      : null;
+  if (requestLogger) {
+    app.addHook('onResponse', async (req, reply) => {
+      const started = (req as { startedAt?: number }).startedAt ?? Date.now();
+      const [path, query] = req.url.split('?');
+      const country = req.headers['cf-ipcountry'];
+      const referer = req.headers.referer;
+      requestLogger.add({
+        at: new Date(),
+        ip: clientIp(req),
+        country: typeof country === 'string' ? country.slice(0, 8) : null,
+        method: req.method,
+        path: (path ?? '/').slice(0, 200),
+        route: normalizePath(path ?? '/'),
+        query: query ? query.slice(0, 500) : null,
+        status: reply.statusCode,
+        ms: Date.now() - started,
+        bytes: Number(reply.getHeader('content-length')) || null,
+        userAgent: userAgent(req),
+        referer: typeof referer === 'string' ? referer.slice(0, 300) : null,
+        admin: path?.startsWith('/api/admin') === true || path?.startsWith('/api/auth') === true,
+      });
+    });
+    app.addHook('onClose', async () => {
+      await requestLogger.close();
+    });
+  }
 
   app.setNotFoundHandler((req, reply) => {
     reply.header('cache-control', 'no-store');
@@ -155,6 +212,8 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
       await registerRunRoutes(api, deps);
       await registerReplayRoutes(api, deps);
       await registerSearchRoutes(api, deps);
+      await registerAuthRoutes(api, deps, guard);
+      await registerAdminRoutes(api, deps, guard);
     },
     { prefix: '/api' },
   );

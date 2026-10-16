@@ -196,6 +196,37 @@ export async function registerMiscRoutes(app: FastifyInstance, deps: HttpDeps): 
   );
 
   api.get(
+    '/announcements',
+    {
+      schema: {
+        tags: ['meta'],
+        summary: 'Active site announcements. Plain text, render as text.',
+        response: { 200: AnyObject },
+      },
+    },
+    async (_req, reply) => {
+      reply.header('cache-control', 'public, max-age=30');
+      const rows = (await execRows(
+        db,
+        sql`select id, body, level, scope from announcements
+            where active = true
+              and (starts_at is null or starts_at <= now())
+              and (ends_at is null or ends_at > now())
+            order by case level when 'critical' then 0 when 'warning' then 1 else 2 end, id desc
+            limit 10`,
+      )) as unknown as Record<string, unknown>[];
+      return {
+        data: rows.map((r) => ({
+          id: Number(r.id),
+          body: r.body,
+          level: r.level,
+          scope: r.scope,
+        })),
+      };
+    },
+  );
+
+  api.get(
     '/records',
     {
       schema: {
