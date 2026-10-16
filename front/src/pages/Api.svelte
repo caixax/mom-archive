@@ -118,9 +118,9 @@
 <h1>API</h1>
 <p>
   Everything on this site comes from a public, read only JSON API under
-  <span class="mono">https://momarchive.caixa.cc/api</span>. No key, no login, no write endpoints.
-  Only <span class="mono">GET</span> and <span class="mono">HEAD</span> are accepted. The machine
-  readable spec lives at
+  <span class="mono">https://momarchive.org/api</span>. No key, no login, no write endpoints. Only
+  <span class="mono">GET</span>
+  and <span class="mono">HEAD</span> are accepted. The machine readable spec lives at
   <a href="/api/openapi.json" rel="external">/api/openapi.json</a>; this page is the human version.
 </p>
 
@@ -214,16 +214,16 @@
 
 <h2>Examples</h2>
 <pre>{`# who is this player, under any name they ever had
-curl 'https://momarchive.caixa.cc/api/search?q=STEAM_0:1:462683303'
+curl 'https://momarchive.org/api/search?q=STEAM_0:1:462683303'
 
 # the Bhop HL1 leaderboard of a map as it was on new year
-curl 'https://momarchive.caixa.cc/api/maps/730/leaderboard?gamemode=3&at=2026-01-01T00:00:00Z'
+curl 'https://momarchive.org/api/maps/730/leaderboard?gamemode=3&at=2026-01-01T00:00:00Z'
 
 # every run an admin deleted, newest first
-curl 'https://momarchive.caixa.cc/api/runs?removed=true'
+curl 'https://momarchive.org/api/runs?removed=true'
 
 # download a replay Momentum no longer has
-curl -OJ 'https://momarchive.caixa.cc/api/replays/cb2633f17166c7a69c51929a0afd1a172bf1407f/download'`}</pre>
+curl -OJ 'https://momarchive.org/api/replays/cb2633f17166c7a69c51929a0afd1a172bf1407f/download'`}</pre>
 
 <h2>Enum values</h2>
 <p>Numeric fields in responses use Momentum's own enums. The ones you will actually need:</p>

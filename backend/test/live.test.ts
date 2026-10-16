@@ -12,7 +12,7 @@ describe.skipIf(!live)('live momentum api', () => {
   const c = new MomentumClient({
     baseUrl: 'https://api.momentum-mod.org/v1',
     cdnUrl: 'https://cdn.momentum-mod.org',
-    userAgent: 'mom-archive/test (+https://momarchive.caixa.cc)',
+    userAgent: 'mom-archive/test (+https://momarchive.org)',
     rps: 5,
     rpm: 100,
     logger: getLogger('live'),

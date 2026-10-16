@@ -60,7 +60,7 @@ const schema = z.object({
   USER_AGENT: z
     .string()
     .min(1)
-    .default('mom-archive/1.0 (+https://momarchive.caixa.cc; contact: westlargo@proton.me)'),
+    .default('mom-archive/1.0 (+https://momarchive.org; contact: westlargo@proton.me)'),
 
   STEAM_API_KEY: z.string().optional().default(''),
   STEAMHISTORY_API_KEY: z.string().optional().default(''),
@@ -97,7 +97,7 @@ const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(5771),
   BIND_HOST: z.string().default('127.0.0.1'),
   ALLOW_PUBLIC_BIND: bool,
-  PUBLIC_BASE_URL: z.string().url().default('https://momarchive.caixa.cc'),
+  PUBLIC_BASE_URL: z.string().url().default('https://momarchive.org'),
 });
 
 export type Config = z.infer<typeof schema> & {

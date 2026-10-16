@@ -1,16 +1,29 @@
 # Cloudflare Tunnel ingress for mom-archive.
 # Copy the relevant part into /etc/cloudflared/config.yml (or merge with your existing tunnel config).
 # The tunnel talks to nginx on loopback only; the backend on 5771 is never exposed.
+#
+# Every hostname points at the same nginx, which decides what to do by Host:
+# momarchive.org is served, the others are redirected to it. So no httpHostHeader
+# here: overriding the Host would make nginx see one name for all of them and the
+# redirects would never fire.
 
 tunnel: REPLACE_WITH_TUNNEL_ID
 credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_ID.json
 
 ingress:
+  - hostname: momarchive.org
+    service: http://127.0.0.1:5770
+    originRequest:
+      connectTimeout: 10s
+  - hostname: www.momarchive.org
+    service: http://127.0.0.1:5770
+    originRequest:
+      connectTimeout: 10s
+  # The hostname the archive used before momarchive.org. Kept so old links survive;
+  # nginx answers it with a 301 to the canonical host.
   - hostname: momarchive.caixa.cc
     service: http://127.0.0.1:5770
     originRequest:
-      httpHostHeader: momarchive.caixa.cc
       connectTimeout: 10s
-      noTLSVerify: false
   # Catch all: must be last
   - service: http_status:404

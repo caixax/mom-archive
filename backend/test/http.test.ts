@@ -28,7 +28,7 @@ const env = {
   S3_BUCKET: 'b',
   S3_ACCESS_KEY: 'a',
   S3_SECRET_KEY: 's',
-  PUBLIC_BASE_URL: 'https://momarchive.caixa.cc',
+  PUBLIC_BASE_URL: 'https://momarchive.org',
 };
 
 let t: TestDb;

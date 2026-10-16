@@ -4,7 +4,9 @@ A public, self-hosted archive of Momentum Mod leaderboard data for the Bhop HL1 
 
 Momentum itself keeps none of this history: only the current PB replay of each leaderboard survives (the previous one is deleted the moment a player improves), alias and avatar are single overwritten columns, and runs deleted by admins vanish from the public API without a trace. The archive exists to preserve what Momentum throws away.
 
-Live instance: https://momarchive.caixa.cc
+Live instance: https://momarchive.org
+
+The canonical hostname is `momarchive.org`. `www.momarchive.org` and the hostname the archive started on, `momarchive.caixa.cc`, are permanent redirects to it, path and query intact, so nothing that was ever linked breaks.
 
 ## Contents
 
@@ -133,8 +135,8 @@ mom-archive/
     test/                vitest: unit tests + PGlite integration tests + opt-in live tests
   front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
   deploy/
-    nginx.momarchive.conf      listens 127.0.0.1:5770, serves /var/www/momarchive, proxies /api/ to 127.0.0.1:5771
-    cloudflared.example.yml    ingress: momarchive.caixa.cc -> http://127.0.0.1:5770
+    nginx.momarchive.conf      listens 127.0.0.1:5770, serves /var/www/momarchive, proxies /api/ to 127.0.0.1:5771, redirects the old hostnames
+    cloudflared.example.yml    ingress: every hostname -> http://127.0.0.1:5770
     postgres-roles.sql         creates momarchive_rw, momarchive_ro and momarchive_app
   ecosystem.config.cjs         pm2: momarchive-backend only
   .env.example
@@ -181,7 +183,7 @@ mom-archive/
    sudo nginx -t && sudo systemctl reload nginx
    ```
 
-5. **cloudflared**: merge `deploy/cloudflared.example.yml` into `/etc/cloudflared/config.yml` (hostname `momarchive.caixa.cc` -> `http://127.0.0.1:5770`) and restart the tunnel. Only nginx is reachable through the tunnel; the backend never is.
+5. **cloudflared**: merge `deploy/cloudflared.example.yml` into `/etc/cloudflared/config.yml` (every hostname -> `http://127.0.0.1:5770`) and restart the tunnel. Only nginx is reachable through the tunnel; the backend never is. Do not set `httpHostHeader`: nginx decides by `Host` which name is served and which is redirected.
 
 6. **Backend under pm2** (migrations run on boot):
 

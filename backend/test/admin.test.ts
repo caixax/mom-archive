@@ -27,7 +27,7 @@ const env = {
   S3_BUCKET: 'b',
   S3_ACCESS_KEY: 'a',
   S3_SECRET_KEY: 's',
-  PUBLIC_BASE_URL: 'https://momarchive.caixa.cc',
+  PUBLIC_BASE_URL: 'https://momarchive.org',
   APP_SECRET: SECRET,
   ADMIN_STEAM_IDS: OWNER,
 };
@@ -105,7 +105,7 @@ const authed = (extra: Record<string, string> = {}) => ({
   cookie: `${cookie}=${sessionToken}`,
   ...extra,
 });
-const writeHeaders = () => authed({ origin: 'https://momarchive.caixa.cc', 'x-csrf-token': csrf });
+const writeHeaders = () => authed({ origin: 'https://momarchive.org', 'x-csrf-token': csrf });
 
 describe('admin panel access', () => {
   it('says nothing about a session to an anonymous caller', async () => {
@@ -159,7 +159,7 @@ describe('admin panel access', () => {
     const noCsrf = await app.inject({
       method: 'POST',
       url: '/api/admin/announcements',
-      headers: authed({ origin: 'https://momarchive.caixa.cc' }),
+      headers: authed({ origin: 'https://momarchive.org' }),
       payload: { body: 'x' },
     });
     expect(noCsrf.statusCode).toBe(403);
@@ -168,7 +168,7 @@ describe('admin panel access', () => {
     const badCsrf = await app.inject({
       method: 'POST',
       url: '/api/admin/announcements',
-      headers: authed({ origin: 'https://momarchive.caixa.cc', 'x-csrf-token': 'b'.repeat(64) }),
+      headers: authed({ origin: 'https://momarchive.org', 'x-csrf-token': 'b'.repeat(64) }),
       payload: { body: 'x' },
     });
     expect(badCsrf.statusCode).toBe(403);
@@ -287,7 +287,7 @@ describe('steam openid verification', () => {
     'openid.op_endpoint': 'https://steamcommunity.com/openid/login',
     'openid.claimed_id': `https://steamcommunity.com/openid/id/${OWNER}`,
     'openid.identity': `https://steamcommunity.com/openid/id/${OWNER}`,
-    'openid.return_to': 'https://momarchive.caixa.cc/api/auth/steam/callback?state=abc',
+    'openid.return_to': 'https://momarchive.org/api/auth/steam/callback?state=abc',
     'openid.signed': 'signed,op_endpoint,claimed_id,identity,return_to',
     'openid.sig': 'whatever',
   };
