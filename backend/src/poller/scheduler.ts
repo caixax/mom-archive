@@ -12,7 +12,20 @@ export interface JobResult {
   note?: string;
 }
 
-export type JobFn = (signal: AbortSignal) => Promise<JobResult | void>;
+export interface JobProgress {
+  done: number;
+  total: number | null;
+  note?: string;
+}
+
+/** Long jobs call this as they go so the owner's panel can show how far they got. */
+export type ProgressFn = (p: JobProgress) => void;
+
+export type JobFn = (
+  signal: AbortSignal,
+  progress: ProgressFn,
+  args?: Record<string, unknown>,
+) => Promise<JobResult | void>;
 
 export interface JobDefinition {
   name: string;
@@ -23,7 +36,11 @@ export interface JobDefinition {
   run: JobFn;
   /** Workers run forever; the scheduler only starts them and reports health. */
   worker?: boolean;
+  /** Never scheduled; runs only when started by hand (CLI or the owner's panel). */
+  manual?: boolean;
 }
+
+export type StartResult = 'started' | 'running' | 'unknown' | 'worker' | 'stopped';
 
 export interface JobStatus {
   name: string;
@@ -39,12 +56,17 @@ export interface JobStatus {
   nextRunAt: Date | null;
   runs: number;
   failures: number;
+  worker: boolean;
+  manual: boolean;
+  progress: (JobProgress & { at: Date }) | null;
+  cancelRequested: boolean;
 }
 
 export class Scheduler {
   private readonly jobs = new Map<string, JobDefinition>();
   private readonly status = new Map<string, JobStatus>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  private readonly running = new Map<string, AbortController>();
   private readonly abort = new AbortController();
   private stopped = false;
 
@@ -74,15 +96,20 @@ export class Scheduler {
       nextRunAt: null,
       runs: 0,
       failures: 0,
+      worker: def.worker ?? false,
+      manual: def.manual ?? false,
+      progress: null,
+      cancelRequested: false,
     });
   }
 
-  start(): void {
+  begin(): void {
     for (const def of this.jobs.values()) {
       if (def.worker) {
         void this.runWorker(def);
         continue;
       }
+      if (def.manual) continue;
       const delay = def.initialDelayMs ?? 0;
       this.status.get(def.name)!.nextRunAt = new Date(Date.now() + delay);
       this.timers.set(
@@ -105,15 +132,41 @@ export class Scheduler {
   }
 
   /** Runs a job now if it is not already running. Returns false when skipped. */
-  async trigger(name: string): Promise<boolean> {
+  async trigger(name: string, args?: Record<string, unknown>): Promise<boolean> {
     const def = this.jobs.get(name);
     if (!def) throw new Error(`unknown job ${name}`);
     const st = this.status.get(name)!;
     if (st.running) return false;
     const t = this.timers.get(name);
     if (t) clearTimeout(t);
-    await this.tick(def);
+    await this.tick(def, args);
     return true;
+  }
+
+  /** Starts a job in the background and answers at once; the next scheduled tick moves to after it. */
+  start(name: string, args?: Record<string, unknown>): StartResult {
+    const def = this.jobs.get(name);
+    if (!def) return 'unknown';
+    if (def.worker) return 'worker';
+    if (this.stopped) return 'stopped';
+    if (this.status.get(name)!.running) return 'running';
+    const t = this.timers.get(name);
+    if (t) clearTimeout(t);
+    void this.tick(def, args);
+    return 'started';
+  }
+
+  /** Asks a running job to stop. Jobs check their signal between batches, so it ends soon, not instantly. */
+  cancel(name: string): boolean {
+    const ac = this.running.get(name);
+    if (!ac) return false;
+    this.status.get(name)!.cancelRequested = true;
+    ac.abort();
+    return true;
+  }
+
+  has(name: string): boolean {
+    return this.jobs.has(name);
   }
 
   statuses(): JobStatus[] {
@@ -126,7 +179,7 @@ export class Scheduler {
     st.lastStartAt = new Date();
     while (!this.stopped) {
       try {
-        await def.run(this.abort.signal);
+        await def.run(this.abort.signal, () => {});
         st.lastSuccessAt = new Date();
         st.lastError = null;
       } catch (e) {
@@ -140,11 +193,17 @@ export class Scheduler {
     st.running = false;
   }
 
-  private async tick(def: JobDefinition): Promise<void> {
+  private async tick(def: JobDefinition, args?: Record<string, unknown>): Promise<void> {
     if (this.stopped) return;
     const st = this.status.get(def.name)!;
     if (st.running) return;
     st.running = true;
+    st.progress = null;
+    st.cancelRequested = false;
+    const ac = new AbortController();
+    const onStop = () => ac.abort();
+    this.abort.signal.addEventListener('abort', onStop);
+    this.running.set(def.name, ac);
     st.runs += 1;
     const startedAt = new Date();
     st.lastStartAt = startedAt;
@@ -164,11 +223,19 @@ export class Scheduler {
     let error: string | null = null;
     let result: JobResult = {};
     try {
-      result = (await def.run(this.abort.signal)) ?? {};
+      const progress: ProgressFn = (p) => {
+        st.progress = { ...p, at: new Date() };
+      };
+      result = (await def.run(ac.signal, progress, args)) ?? {};
       ok = true;
     } catch (e) {
       error = errMsg(e);
+    } finally {
+      this.running.delete(def.name);
+      this.abort.signal.removeEventListener('abort', onStop);
     }
+    if (st.cancelRequested && ok)
+      result.note = [result.note, 'cancelled'].filter(Boolean).join(' ');
     const finishedAt = new Date();
     const apiCalls = this.mom.stats().callsTotal - callsBefore;
     st.running = false;
@@ -208,7 +275,7 @@ export class Scheduler {
         this.log.warn('poll_log update failed', { job: def.name, error: errMsg(e) });
       }
     }
-    if (!this.stopped && def.intervalMs > 0) {
+    if (!this.stopped && def.intervalMs > 0 && !def.manual) {
       st.nextRunAt = new Date(Date.now() + def.intervalMs);
       this.timers.set(
         def.name,

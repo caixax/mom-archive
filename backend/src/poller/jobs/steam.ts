@@ -12,7 +12,7 @@ import type { SteamBans, SteamSummary } from '../../steam/steam.js';
 import type { PollerContext } from '../context.js';
 import { diffFields, stableHash } from '../diff.js';
 import { recordAvatar, recordName } from '../observe.js';
-import type { JobResult } from '../scheduler.js';
+import type { JobResult, ProgressFn } from '../scheduler.js';
 import { ensureAvatarArchived } from './helpers.js';
 import { execRows } from '../../db/index.js';
 
@@ -173,14 +173,19 @@ async function dueSteamIds(ctx: PollerContext, limit: number): Promise<string[]>
   return rows.map((r) => r.steam_id);
 }
 
-export async function steamRefresh(ctx: PollerContext): Promise<JobResult> {
+export async function steamRefresh(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   if (!ctx.steam) return { note: 'disabled' };
   if (!ctx.steam.hasBudget()) return { note: 'daily quota reached' };
   const ids = await dueSteamIds(ctx, 20_000);
   let seen = 0;
   let changed = 0;
   for (let i = 0; i < ids.length; i += 100) {
-    if (ctx.scheduler.signal.aborted) break;
+    if (signal.aborted) break;
+    progress({ done: i, total: ids.length });
     const batch = ids.slice(i, i + 100);
     let summaries: SteamSummary[];
     let bans: SteamBans[];
@@ -241,14 +246,19 @@ async function dueSourcebanIds(ctx: PollerContext, limit: number): Promise<strin
   return rows.map((r) => r.steam_id);
 }
 
-export async function steamHistoryRefresh(ctx: PollerContext): Promise<JobResult> {
+export async function steamHistoryRefresh(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   if (!ctx.steamHistory) return { note: 'disabled' };
   const ids = await dueSourcebanIds(ctx, 10_000);
   let seen = 0;
   let newBans = 0;
   let stateChanges = 0;
   for (let i = 0; i < ids.length; i += 100) {
-    if (ctx.scheduler.signal.aborted) break;
+    if (signal.aborted) break;
+    progress({ done: i, total: ids.length });
     const batch = ids.slice(i, i + 100);
     let result;
     try {

@@ -3,6 +3,7 @@ import { bootstrap } from './bootstrap.js';
 import { runMigrations, schemaVersion } from './db/migrate.js';
 import { buildApp } from './http/app.js';
 import { getLogger, errMsg } from './logger.js';
+import { createPollerControl } from './poller/control.js';
 import { registerJobs } from './poller/index.js';
 
 async function main(): Promise<void> {
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     dbSql: rt.pools.roSql,
     storage: rt.storage,
     schemaVersion: schema,
+    control: cfg.adminEnabled ? createPollerControl(rt.poller, cfg.POLLER_ENABLED) : null,
     log: getLogger('http'),
     status: {
       pollerEnabled: cfg.POLLER_ENABLED,
@@ -54,7 +56,7 @@ async function main(): Promise<void> {
 
   if (cfg.POLLER_ENABLED) {
     registerJobs(rt.poller);
-    rt.scheduler.start();
+    rt.scheduler.begin();
   } else {
     log.warn('poller disabled (POLLER_ENABLED=false)');
   }

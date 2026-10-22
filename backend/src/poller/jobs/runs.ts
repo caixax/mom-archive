@@ -18,7 +18,7 @@ import {
   upsertLeaderboardEntry,
 } from '../observe.js';
 import { enqueueLeaderboardRefresh, enqueueRefresh, PRIORITY } from '../queue.js';
-import type { JobResult } from '../scheduler.js';
+import type { JobResult, ProgressFn } from '../scheduler.js';
 import { ensureAvatarArchived, getCursor, identityFromUser, setCursor } from './helpers.js';
 import { execRows } from '../../db/index.js';
 
@@ -141,14 +141,20 @@ interface BetaCursor extends Record<string, unknown> {
 }
 
 /** Per map incremental walk for maps that are not approved (beta, testing, disabled). */
-export async function betaRuns(ctx: PollerContext): Promise<JobResult> {
+export async function betaRuns(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   const cursor = (await getCursor<BetaCursor>(ctx.db, 'beta-runs')) ?? { perMap: {} };
   const betaMaps = await ctx.db
     .select({ id: maps.id })
     .from(maps)
     .where(and(ne(maps.status, 0), eq(maps.archived, true), isNull(maps.notFoundAt)));
   const stats: IngestStats = { seen: 0, stored: 0, newRuns: 0, newReplays: 0, maxId: 0 };
-  for (const m of betaMaps) {
+  for (const [i, m] of betaMaps.entries()) {
+    if (signal.aborted) break;
+    progress({ done: i, total: betaMaps.length, note: `newRuns=${stats.newRuns}` });
     const lastMaxId = cursor.perMap[String(m.id)] ?? 0;
     let maxId = lastMaxId;
     let pages = 0;

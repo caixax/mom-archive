@@ -13,6 +13,7 @@ import {
 } from './jobs/sweeps.js';
 import { steamHistoryRefresh, steamRefresh } from './jobs/steam.js';
 import { housekeeping, searchRefresh, storageSummary } from './jobs/maintenance.js';
+import { runBackfill, type BackfillPhase } from './jobs/backfill.js';
 
 const MIN = 60_000;
 const HOUR = 3600_000;
@@ -31,7 +32,7 @@ export function registerJobs(ctx: PollerContext): void {
     name: 'beta-runs',
     intervalMs: cfg.POLL_RUNS_MINUTES * MIN,
     initialDelayMs: 2 * MIN,
-    run: () => betaRuns(ctx),
+    run: (signal, progress) => betaRuns(ctx, signal, progress),
   });
   s.register({
     name: 'replay-download',
@@ -49,7 +50,7 @@ export function registerJobs(ctx: PollerContext): void {
     name: 'users-sweep',
     intervalMs: cfg.POLL_USERS_SWEEP_HOURS * HOUR,
     initialDelayMs: 30 * MIN,
-    run: () => usersSweep(ctx),
+    run: (signal, progress) => usersSweep(ctx, signal, progress),
   });
   s.register({
     name: 'users-unfetched',
@@ -61,7 +62,7 @@ export function registerJobs(ctx: PollerContext): void {
     name: 'maps-sweep',
     intervalMs: cfg.POLL_MAPS_HOURS * HOUR,
     initialDelayMs: 1 * MIN,
-    run: () => mapsSweep(ctx),
+    run: (signal, progress) => mapsSweep(ctx, signal, progress),
   });
   s.register({
     name: 'leaderboards-full-sweep',
@@ -73,25 +74,25 @@ export function registerJobs(ctx: PollerContext): void {
     name: 'maps-walk',
     intervalMs: cfg.POLL_MAPS_WALK_HOURS * HOUR,
     initialDelayMs: 20 * MIN,
-    run: () => mapsWalk(ctx),
+    run: (signal, progress) => mapsWalk(ctx, signal, progress),
   });
   s.register({
     name: 'avatars-fetch',
     intervalMs: 5 * MIN,
     initialDelayMs: 4 * MIN,
-    run: () => avatarsFetch(ctx),
+    run: (signal, progress) => avatarsFetch(ctx, signal, progress),
   });
   s.register({
     name: 'steam-refresh',
     intervalMs: 30 * MIN,
     initialDelayMs: 6 * MIN,
-    run: () => steamRefresh(ctx),
+    run: (signal, progress) => steamRefresh(ctx, signal, progress),
   });
   s.register({
     name: 'steamhistory-refresh',
     intervalMs: 60 * MIN,
     initialDelayMs: 8 * MIN,
-    run: () => steamHistoryRefresh(ctx),
+    run: (signal, progress) => steamHistoryRefresh(ctx, signal, progress),
   });
   s.register({
     name: 'search-refresh',
@@ -110,5 +111,20 @@ export function registerJobs(ctx: PollerContext): void {
     intervalMs: 24 * HOUR,
     initialDelayMs: 60 * MIN,
     run: () => housekeeping(ctx),
+  });
+  // The one time catch up, startable from the owner's panel. Resumable like the CLI one.
+  s.register({
+    name: 'backfill',
+    intervalMs: 0,
+    manual: true,
+    run: async (signal, progress, args) => {
+      const c = await runBackfill(ctx, {
+        phase: args?.phase as BackfillPhase | undefined,
+        only: args?.only as BackfillPhase | undefined,
+        signal,
+        progress,
+      });
+      return { note: `phase=${c.phase}` };
+    },
   });
 }

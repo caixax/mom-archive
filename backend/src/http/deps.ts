@@ -4,6 +4,7 @@ import type { Config } from '../config.js';
 import type { Db } from '../db/index.js';
 import type { Logger } from '../logger.js';
 import type { ClientStats } from '../momentum/client.js';
+import type { PollerControl } from '../poller/control.js';
 import type { JobStatus } from '../poller/scheduler.js';
 import type { SteamStats } from '../steam/steam.js';
 import type { SteamHistoryStats } from '../steam/steamhistory.js';
@@ -29,6 +30,11 @@ export interface HttpDeps {
   dbSql: Sql;
   storage: Storage;
   status: StatusSource;
+  /**
+   * What the owner's panel may ask of the poller in this process: start or stop a
+   * job, queue a refresh, requeue failed replays. Never a database handle.
+   */
+  control?: PollerControl | null;
   schemaVersion: number;
   log: Logger;
 }

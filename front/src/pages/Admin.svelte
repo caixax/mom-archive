@@ -7,7 +7,7 @@
   import { loadSession, send, session, WriteError } from '../lib/session.svelte';
   import { route } from '../lib/router.svelte';
 
-  type Tab = 'overview' | 'traffic' | 'announcements' | 'notices' | 'audit' | 'sessions';
+  type Tab = 'overview' | 'poller' | 'traffic' | 'announcements' | 'notices' | 'audit' | 'sessions';
   let tab = $state<Tab>('overview');
   let error = $state<string | null>(null);
   let note = $state<string | null>(null);
@@ -56,6 +56,244 @@
       fail(e);
     }
   }
+
+  // Poller
+
+  interface JobRow {
+    name: string;
+    worker: boolean;
+    manual: boolean;
+    running: boolean;
+    cancelRequested: boolean;
+    progress: { done: number; total: number | null; note?: string; at: string } | null;
+    intervalMs: number;
+    lastStartAt: string | null;
+    lastFinishAt: string | null;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+    lastItemsSeen: number;
+    lastItemsNew: number;
+    lastDurationMs: number | null;
+    nextRunAt: string | null;
+    runs: number;
+    failures: number;
+    day: { runs: number; failures: number; avgMs: number; apiCalls: number };
+  }
+  interface Poller {
+    pollerEnabled: boolean;
+    controllable: boolean;
+    process: {
+      startedAt: string;
+      uptimeS: number;
+      node: string;
+      rssBytes: number;
+      heapUsedBytes: number;
+      heapTotalBytes: number;
+      schema: number;
+      gamemodes: number[];
+    };
+    jobs: JobRow[];
+    clients: {
+      momentum: {
+        lastCallAt: string | null;
+        lastOkAt: string | null;
+        lastStatus: number | null;
+        lastError: string | null;
+        callsLastHour: number;
+        callsTotal: number;
+        budgetPerHour: number;
+        rps: number;
+        rpm: number;
+      };
+      steam: {
+        lastCallAt: string | null;
+        lastStatus: number | null;
+        lastError: string | null;
+        callsToday: number;
+        dailyQuota: number;
+      } | null;
+      steamHistory: {
+        lastCallAt: string | null;
+        lastStatus: number | null;
+        lastError: string | null;
+        callsTotal: number;
+      } | null;
+    };
+    queues: {
+      refresh: {
+        kind: string;
+        pending: number;
+        inFlight: number;
+        urgent: number;
+        maxAttempts: number;
+        oldest: string | null;
+      }[];
+      replay: {
+        pending: number;
+        inFlight: number;
+        failed: number;
+        oldest: string | null;
+        gaveUp: number;
+        gone404: number;
+        retrying: number;
+      };
+      replayFailures: {
+        sha1: string;
+        attempts: number;
+        lastStatus: number | null;
+        lastError: string | null;
+        lastFailedAt: string;
+        gaveUp: boolean;
+      }[];
+      fetchFailures: { kind: string; n: number; gaveUp: number; lastAt: string }[];
+    };
+    cursors: Record<string, Record<string, unknown> & { updatedAt: string }>;
+  }
+  interface HistoryRow {
+    id: number;
+    job: string;
+    startedAt: string;
+    finishedAt: string | null;
+    ok: boolean | null;
+    itemsSeen: number;
+    itemsNew: number;
+    apiCalls: number;
+    error: string | null;
+  }
+  const PHASES = ['runs', 'users', 'maps', 'leaderboards', 'beta-runs'] as const;
+  const REFRESH_KINDS = ['user', 'map', 'leaderboard', 'follows', 'activities', 'run-verify'];
+
+  let poller = $state<Poller | null>(null);
+  let historyJob = $state<string | null>(null);
+  let history = $state<HistoryRow[]>([]);
+  let refreshKind = $state('user');
+  let refreshKey = $state('');
+  let backfillPhase = $state('');
+  let backfillOnly = $state(false);
+
+  async function loadPoller() {
+    try {
+      // Only this one call repeats: nginx holds /api/admin/ to 30 requests a minute.
+      poller = await api<Poller>('/api/admin/poller');
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function loadHistory(job: string) {
+    try {
+      history = (await api<{ data: HistoryRow[] }>('/api/admin/poller/history', { job, limit: 50 }))
+        .data;
+      historyJob = job;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function startJob(name: string, args: Record<string, unknown> = {}) {
+    busy = true;
+    try {
+      await send('POST', `/api/admin/poller/jobs/${name}/start`, args);
+      done(`${name} started.`);
+      await loadPoller();
+    } catch (e) {
+      fail(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cancelJob(name: string) {
+    if (!confirm(`Stop ${name}? It finishes the batch it is on and keeps its cursor.`)) return;
+    busy = true;
+    try {
+      await send('POST', `/api/admin/poller/jobs/${name}/cancel`);
+      done(`${name} asked to stop.`);
+      await loadPoller();
+    } catch (e) {
+      fail(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function startBackfill() {
+    const args: Record<string, unknown> = {};
+    if (backfillPhase) {
+      args.phase = backfillPhase;
+      if (backfillOnly) args.only = backfillPhase;
+    }
+    const what = backfillPhase
+      ? `from the ${backfillPhase} phase${backfillOnly ? ' only' : ''}`
+      : 'from where its cursor is';
+    if (!confirm(`Start the backfill ${what}? It can take hours.`)) return;
+    await startJob('backfill', args);
+  }
+
+  async function queueRefresh(e: Event) {
+    e.preventDefault();
+    const key = refreshKey.trim();
+    if (!key) return;
+    busy = true;
+    try {
+      await send('POST', '/api/admin/poller/refresh', { kind: refreshKind, key });
+      refreshKey = '';
+      done(`${refreshKind} ${key} queued at the front of the refresh queue.`);
+      await loadPoller();
+    } catch (err) {
+      fail(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function requeueReplays(include404: boolean) {
+    if (
+      include404 &&
+      !confirm('Also retry replays that answered 404? Those were already deleted upstream.')
+    )
+      return;
+    busy = true;
+    try {
+      const r = await send<{ requeued: number }>('POST', '/api/admin/poller/replays/requeue', {
+        include404,
+      });
+      done(`${r.requeued} replay download(s) back in the queue.`);
+      await loadPoller();
+    } catch (e) {
+      fail(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function duration(ms: number | null | undefined): string {
+    if (ms === null || ms === undefined) return '';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ${s % 60}s`;
+    const h = Math.floor(m / 60);
+    if (h < 48) return `${h}h ${m % 60}m`;
+    return `${Math.floor(h / 24)}d ${h % 24}h`;
+  }
+  function pct(done: number, total: number | null | undefined): number | null {
+    if (!total || total <= 0) return null;
+    return Math.min(100, Math.round((done / total) * 1000) / 10);
+  }
+
+  const backfill = $derived(poller?.cursors['backfill'] ?? null);
+  const backfillJob = $derived(poller?.jobs.find((j) => j.name === 'backfill') ?? null);
+  const scheduledJobs = $derived((poller?.jobs ?? []).filter((j) => j.name !== 'backfill'));
+
+  // The poller tab follows live state; refresh it while it is visible.
+  $effect(() => {
+    if (!session.authenticated || tab !== 'poller') return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible' && !busy) void loadPoller();
+    }, 5000);
+    return () => clearInterval(timer);
+  });
 
   // Traffic
 
@@ -363,6 +601,7 @@
     if (!session.authenticated) return;
     const t = tab;
     if (t === 'overview') void loadStats();
+    else if (t === 'poller') void loadPoller();
     else if (t === 'traffic') void loadTraffic();
     else if (t === 'announcements') void loadAnnouncements();
     else if (t === 'notices') void loadNotices();
@@ -372,6 +611,7 @@
 
   const tabs: [Tab, string][] = [
     ['overview', 'Overview'],
+    ['poller', 'Poller'],
     ['traffic', 'Traffic'],
     ['announcements', 'Announcements'],
     ['notices', 'Profile notices'],
@@ -509,6 +749,371 @@
         </table>
       </div>
       <p class="muted small"><a href="/status">Public status page</a></p>
+    {:else}
+      <p class="muted">Loading.</p>
+    {/if}
+  {/if}
+
+  {#if tab === 'poller'}
+    {#if poller}
+      {#if !poller.pollerEnabled}
+        <p class="notice">
+          POLLER_ENABLED is false in this process: jobs cannot be started from here. Refreshes and
+          replay requeues still land in the queues for whichever process drains them.
+        </p>
+      {/if}
+      <div class="cards">
+        <div class="card">
+          <h3>Process</h3>
+          <div class="big">{duration(poller.process.uptimeS * 1000)}</div>
+          <span class="muted small"
+            >up since {formatDate(poller.process.startedAt)}, {poller.process.node}, schema {poller
+              .process.schema}, gamemodes {poller.process.gamemodes.join(',')}</span
+          >
+        </div>
+        <div class="card">
+          <h3>Memory</h3>
+          <div class="big">{formatBytes(poller.process.rssBytes)}</div>
+          <span class="muted small"
+            >heap {formatBytes(poller.process.heapUsedBytes)} of {formatBytes(
+              poller.process.heapTotalBytes,
+            )}</span
+          >
+        </div>
+        <div class="card">
+          <h3>Momentum API</h3>
+          <div class="big">
+            {formatInt(poller.clients.momentum.callsLastHour)}
+            <span class="muted small">/ {formatInt(poller.clients.momentum.budgetPerHour)} h</span>
+          </div>
+          <span class="muted small"
+            >{poller.clients.momentum.rps}/s, {poller.clients.momentum.rpm}/min. Last {poller
+              .clients.momentum.lastStatus ?? 'none'}
+            {relTime(poller.clients.momentum.lastCallAt)}{#if poller.clients.momentum.lastError}<br
+              /><span class="err-text">{poller.clients.momentum.lastError}</span>{/if}</span
+          >
+        </div>
+        <div class="card">
+          <h3>Steam</h3>
+          {#if poller.clients.steam}
+            <div class="big">
+              {formatInt(poller.clients.steam.callsToday)}
+              <span class="muted small">/ {formatInt(poller.clients.steam.dailyQuota)} day</span>
+            </div>
+            <span class="muted small"
+              >last {poller.clients.steam.lastStatus ?? 'none'}
+              {relTime(poller.clients.steam.lastCallAt)}{#if poller.clients.steam.lastError}<br
+                /><span class="err-text">{poller.clients.steam.lastError}</span>{/if}</span
+            >
+          {:else}<span class="muted small">disabled</span>{/if}
+        </div>
+        <div class="card">
+          <h3>SteamHistory</h3>
+          {#if poller.clients.steamHistory}
+            <div class="big">{formatInt(poller.clients.steamHistory.callsTotal)}</div>
+            <span class="muted small"
+              >calls since start, last {poller.clients.steamHistory.lastStatus ?? 'none'}
+              {relTime(poller.clients.steamHistory.lastCallAt)}</span
+            >
+          {:else}<span class="muted small">disabled</span>{/if}
+        </div>
+      </div>
+
+      <h2>Jobs</h2>
+      <p class="muted small">
+        Live from the scheduler, refreshed every 5 seconds. "Run now" starts a job at once and moves
+        its next scheduled run to one interval after it ends. "Stop" lets it finish the batch it is
+        on; jobs with a cursor resume from there.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead
+            ><tr
+              ><th>Job</th><th>State</th><th>Last run</th><th class="num">Took</th><th class="num"
+                >Seen / new</th
+              ><th>Next</th><th class="num">24h runs</th><th class="num">24h API</th><th></th></tr
+            ></thead
+          >
+          <tbody>
+            {#each scheduledJobs as j (j.name)}
+              {@const p = j.progress ? pct(j.progress.done, j.progress.total) : null}
+              <tr>
+                <td
+                  >{j.name}<span class="muted small">
+                    {j.worker ? 'worker' : `every ${duration(j.intervalMs)}`}</span
+                  ></td
+                >
+                <td class="small">
+                  {#if j.worker}
+                    <span class="badge {j.lastError ? 'warn' : 'ok'}">always on</span>
+                  {:else if j.running}
+                    <span class="badge accent"
+                      >{j.cancelRequested ? 'stopping' : 'running'}
+                      {duration(Date.now() - new Date(j.lastStartAt ?? Date.now()).getTime())}</span
+                    >
+                    {#if j.progress}
+                      <div class="progress" title={j.progress.note ?? ''}>
+                        <span style={`width:${p ?? 0}%`}></span>
+                      </div>
+                      <span class="mono small"
+                        >{formatInt(j.progress.done)}{#if j.progress.total}
+                          / {formatInt(j.progress.total)} ({p}%){/if}
+                        {j.progress.note ?? ''}</span
+                      >
+                    {/if}
+                  {:else if j.lastError && (!j.lastSuccessAt || (j.lastFinishAt && j.lastSuccessAt < j.lastFinishAt))}
+                    <span class="badge err" title={j.lastError}>failed</span>
+                  {:else if j.lastFinishAt}
+                    <span class="badge ok">idle</span>
+                  {:else}
+                    <span class="badge">not run yet</span>
+                  {/if}
+                </td>
+                <td class="mono small" title={formatDate(j.lastStartAt)}
+                  >{relTime(j.lastStartAt)}</td
+                >
+                <td class="num">{duration(j.lastDurationMs)}</td>
+                <td class="num">{formatInt(j.lastItemsSeen)} / {formatInt(j.lastItemsNew)}</td>
+                <td class="mono small" title={formatDate(j.nextRunAt)}
+                  >{j.nextRunAt ? relTime(j.nextRunAt) : ''}</td
+                >
+                <td class="num"
+                  >{j.day.runs}{#if j.day.failures}<span class="err-text">
+                      ({j.day.failures} failed)</span
+                    >{/if}</td
+                >
+                <td class="num">{formatInt(j.day.apiCalls)}</td>
+                <td class="actions">
+                  {#if !j.worker && poller.controllable}
+                    {#if j.running}
+                      <button
+                        class="link"
+                        onclick={() => cancelJob(j.name)}
+                        disabled={busy || j.cancelRequested}>stop</button
+                      >
+                    {:else}
+                      <button class="link" onclick={() => startJob(j.name)} disabled={busy}
+                        >run now</button
+                      >
+                    {/if}
+                  {/if}
+                  <button class="link" onclick={() => loadHistory(j.name)}>history</button>
+                </td>
+              </tr>
+              {#if j.lastError}
+                <tr class="sub"
+                  ><td></td><td colspan="8" class="small err-text mono">{j.lastError}</td></tr
+                >
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      {#if historyJob}
+        <h3>
+          {historyJob}, last {history.length} runs
+          <button class="link" onclick={() => ((historyJob = null), (history = []))}>close</button>
+        </h3>
+        <div class="table-wrap">
+          <table>
+            <thead
+              ><tr
+                ><th>Started</th><th class="num">Took</th><th>Result</th><th class="num">Seen</th
+                ><th class="num">New</th><th class="num">API calls</th><th>Error</th></tr
+              ></thead
+            >
+            <tbody>
+              {#each history as h (h.id)}
+                <tr>
+                  <td class="mono small">{formatDate(h.startedAt)}</td>
+                  <td class="num"
+                    >{h.finishedAt
+                      ? duration(new Date(h.finishedAt).getTime() - new Date(h.startedAt).getTime())
+                      : ''}</td
+                  >
+                  <td
+                    >{#if h.ok}<span class="badge ok">ok</span>{:else if h.ok === false}<span
+                        class="badge err">failed</span
+                      >{:else}<span class="badge">running</span>{/if}</td
+                  >
+                  <td class="num">{formatInt(h.itemsSeen)}</td>
+                  <td class="num">{formatInt(h.itemsNew)}</td>
+                  <td class="num">{formatInt(h.apiCalls)}</td>
+                  <td class="small mono err-text">{h.error ?? ''}</td>
+                </tr>
+              {:else}
+                <tr><td colspan="7" class="muted">No runs recorded.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+
+      <h2>Backfill</h2>
+      {#if backfill}
+        <p class="small">
+          Phase <strong>{backfill.phase}</strong>, cursor moved {relTime(backfill.updatedAt)}.
+          {#if backfill.runsTotal}Runs walked {formatInt(Number(backfill.runsSkip))} of {formatInt(
+              Number(backfill.runsTotal),
+            )} ({pct(Number(backfill.runsSkip), Number(backfill.runsTotal))}%).{/if}
+          Users up to id {formatInt(Number(backfill.usersNextId))}{#if backfill.usersMaxId}
+            (highest known {formatInt(Number(backfill.usersMaxId))}){/if}.
+          {#if backfill.finishedAt}Finished {formatDate(String(backfill.finishedAt))}.{/if}
+        </p>
+      {:else}
+        <p class="muted small">No backfill has run yet.</p>
+      {/if}
+      {#if backfillJob?.running}
+        {@const p = backfillJob.progress
+          ? pct(backfillJob.progress.done, backfillJob.progress.total)
+          : null}
+        <p class="small">
+          <span class="badge accent"
+            >{backfillJob.cancelRequested ? 'stopping' : 'running here'}</span
+          >
+          {#if backfillJob.progress}{backfillJob.progress.note}: {formatInt(
+              backfillJob.progress.done,
+            )}{#if backfillJob.progress.total}
+              / {formatInt(backfillJob.progress.total)} ({p}%){/if}{/if}
+          <button
+            class="link"
+            onclick={() => cancelJob('backfill')}
+            disabled={busy || backfillJob.cancelRequested}>stop</button
+          >
+        </p>
+        {#if p !== null}<div class="progress wide"><span style={`width:${p}%`}></span></div>{/if}
+      {:else if poller.controllable && backfillJob}
+        <div class="filters">
+          <label
+            >phase
+            <select bind:value={backfillPhase}>
+              <option value="">resume from the cursor</option>
+              {#each PHASES as ph (ph)}<option value={ph}>restart at {ph}</option>{/each}
+            </select>
+          </label>
+          {#if backfillPhase}
+            <label><input type="checkbox" bind:checked={backfillOnly} /> only that phase</label>
+          {/if}
+          <button onclick={startBackfill} disabled={busy}>Start backfill</button>
+        </div>
+        <p class="muted small">
+          Runs in this process, like <span class="mono">pnpm backfill</span>. Refused while the
+          cursor is being moved by another process such as a <span class="mono">pnpm sync</span> in
+          tmux.
+          {#if backfillJob.lastFinishAt}Last run here ended {relTime(
+              backfillJob.lastFinishAt,
+            )}.{/if}
+        </p>
+      {/if}
+
+      <h2>Refresh one thing now</h2>
+      <form class="filters" onsubmit={queueRefresh}>
+        <select bind:value={refreshKind}>
+          {#each REFRESH_KINDS as k (k)}<option value={k}>{k}</option>{/each}
+        </select>
+        <input
+          bind:value={refreshKey}
+          maxlength="40"
+          placeholder={refreshKind === 'leaderboard'
+            ? 'mapId:gamemode:trackType:trackNum:style'
+            : refreshKind === 'map'
+              ? 'map id'
+              : refreshKind === 'run-verify'
+                ? 'run id'
+                : 'momentum user id'}
+        />
+        <button class="primary" type="submit" disabled={busy}>Queue</button>
+      </form>
+      <p class="muted small">
+        Goes to the front of the refresh queue; the refresh worker picks it up within seconds.
+      </p>
+
+      <h2>Queues</h2>
+      <div class="table-wrap">
+        <table>
+          <thead
+            ><tr
+              ><th>Refresh kind</th><th class="num">Pending</th><th class="num">In flight</th><th
+                class="num">Urgent</th
+              ><th class="num">Max attempts</th><th>Oldest</th></tr
+            ></thead
+          >
+          <tbody>
+            {#each poller.queues.refresh as q (q.kind)}
+              <tr>
+                <td>{q.kind}</td>
+                <td class="num">{formatInt(q.pending)}</td>
+                <td class="num">{formatInt(q.inFlight)}</td>
+                <td class="num">{formatInt(q.urgent)}</td>
+                <td class="num">{q.maxAttempts}</td>
+                <td class="mono small">{relTime(q.oldest)}</td>
+              </tr>
+            {:else}
+              <tr><td colspan="6" class="muted">Refresh queue is empty.</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <p class="small">
+        Replays: {formatInt(poller.queues.replay.pending)} pending{#if poller.queues.replay.oldest}
+          (oldest {relTime(poller.queues.replay.oldest)}){/if}, {formatInt(
+          poller.queues.replay.inFlight,
+        )} in flight, {formatInt(poller.queues.replay.failed)} failed. {formatInt(
+          poller.queues.replay.retrying,
+        )} still retrying, {formatInt(poller.queues.replay.gaveUp)} given up of which {formatInt(
+          poller.queues.replay.gone404,
+        )} were already deleted upstream (404).
+      </p>
+      <div class="filters">
+        <button onclick={() => requeueReplays(false)} disabled={busy}>Retry failed downloads</button
+        >
+        <button class="link" onclick={() => requeueReplays(true)} disabled={busy}
+          >also retry the 404s</button
+        >
+      </div>
+
+      {#if poller.queues.replayFailures.length}
+        <h3>Latest replay failures</h3>
+        <div class="table-wrap">
+          <table>
+            <thead
+              ><tr
+                ><th>When</th><th>sha1</th><th class="num">Tries</th><th class="num">Status</th><th
+                  >Error</th
+                ><th></th></tr
+              ></thead
+            >
+            <tbody>
+              {#each poller.queues.replayFailures as f (f.sha1)}
+                <tr>
+                  <td class="mono small">{relTime(f.lastFailedAt)}</td>
+                  <td class="mono small">{f.sha1.slice(0, 12)}</td>
+                  <td class="num">{f.attempts}</td>
+                  <td class="num">{f.lastStatus ?? ''}</td>
+                  <td class="small muted">{(f.lastError ?? '').slice(0, 80)}</td>
+                  <td
+                    >{#if f.gaveUp}<span class="badge {f.lastStatus === 404 ? '' : 'err'}"
+                        >gave up</span
+                      >{:else}<span class="badge warn">retrying</span>{/if}</td
+                  >
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+
+      {#if poller.queues.fetchFailures.length}
+        <h3>Other fetch failures</h3>
+        <ul class="plain small">
+          {#each poller.queues.fetchFailures as f (f.kind)}
+            <li>
+              {f.kind}: {formatInt(f.n)} ({formatInt(f.gaveUp)} given up), last {relTime(f.lastAt)}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {:else}
       <p class="muted">Loading.</p>
     {/if}
@@ -931,7 +1536,7 @@
     cursor: pointer;
   }
   nav.tabs button.active {
-    color: var(--fg);
+    color: var(--text);
     border-color: var(--border);
     background: var(--bg-2);
   }
@@ -954,7 +1559,7 @@
     width: 100%;
     font: inherit;
     background: var(--bg-2);
-    color: var(--fg);
+    color: var(--text);
     border: 1px solid var(--border);
     padding: 0.4rem;
   }
@@ -974,5 +1579,30 @@
   ul.plain {
     list-style: none;
     padding: 0;
+  }
+  .progress {
+    height: 0.4rem;
+    width: 9rem;
+    background: var(--bg-3);
+    margin: 0.25rem 0 0.1rem;
+  }
+  .progress.wide {
+    width: 100%;
+    max-width: 32rem;
+  }
+  .progress span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+  .err-text {
+    color: var(--err);
+  }
+  td.actions {
+    white-space: nowrap;
+  }
+  tr.sub td {
+    border-top: none;
+    padding-top: 0;
   }
 </style>

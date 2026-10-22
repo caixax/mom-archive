@@ -7,7 +7,7 @@ import type { MomMap } from '../../momentum/types.js';
 import type { PollerContext } from '../context.js';
 import { observeMap, observeUser } from '../observe.js';
 import { enqueueRefresh, enqueueRefreshMany, PRIORITY } from '../queue.js';
-import type { JobResult } from '../scheduler.js';
+import type { JobResult, ProgressFn } from '../scheduler.js';
 import {
   ensureAvatarArchived,
   ensureBspArchived,
@@ -23,7 +23,11 @@ import { execRows } from '../../db/index.js';
  * users-sweep: refresh every known user via GET /users?userIDs=...&expand=profile,userStats
  * (100 per call). Follows are re-fetched only for users active in the last 30 days.
  */
-export async function usersSweep(ctx: PollerContext): Promise<JobResult> {
+export async function usersSweep(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   const all = await ctx.db
     .select({ id: users.id, lastRunAt: users.lastRunAt })
     .from(users)
@@ -35,6 +39,8 @@ export async function usersSweep(ctx: PollerContext): Promise<JobResult> {
   const activeCutoff = Date.now() - 30 * 86400_000;
   const activeIds: number[] = [];
   for (let i = 0; i < all.length; i += 100) {
+    if (signal.aborted) break;
+    progress({ done: i, total: all.length, note: `changed=${changed}` });
     const chunk = all.slice(i, i + 100);
     const ids = chunk.map((u) => u.id);
     let page;
@@ -80,10 +86,14 @@ export async function usersSweep(ctx: PollerContext): Promise<JobResult> {
 
 async function sweepMapsFrom(
   ctx: PollerContext,
-  pages: AsyncGenerator<{ page: { data: MomMap[] } }>,
+  pages: AsyncGenerator<{ page: { data: MomMap[]; totalCount?: number } }>,
   stats: { seen: number; changed: number; newMaps: number },
+  signal: AbortSignal,
+  progress: ProgressFn,
 ): Promise<void> {
   for await (const { page } of pages) {
+    if (signal.aborted) break;
+    progress({ done: stats.seen, total: page.totalCount ?? null, note: `new=${stats.newMaps}` });
     const observedAt = new Date();
     for (const m of page.data) {
       stats.seen += 1;
@@ -109,7 +119,11 @@ async function sweepMapsFrom(
 }
 
 /** maps-sweep: GET /maps?gamemode=G for each archived gamemode, plus /maps/submissions with a token. */
-export async function mapsSweep(ctx: PollerContext): Promise<JobResult> {
+export async function mapsSweep(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   const stats = { seen: 0, changed: 0, newMaps: 0 };
   for (const gm of ctx.cfg.ARCHIVE_GAMEMODES) {
     await sweepMapsFrom(
@@ -119,6 +133,8 @@ export async function mapsSweep(ctx: PollerContext): Promise<JobResult> {
         expand: 'info,stats,leaderboards,currentVersion,versions,credits,submitter',
       }),
       stats,
+      signal,
+      progress,
     );
   }
   let submissions = 0;
@@ -133,6 +149,8 @@ export async function mapsSweep(ctx: PollerContext): Promise<JobResult> {
           { auth: true },
         ),
         stats,
+        signal,
+        progress,
       );
       submissions = stats.seen - before;
     } catch (e) {
@@ -185,7 +203,11 @@ interface WalkCursor extends Record<string, unknown> {
 }
 
 /** maps-walk: probe GET /maps/{id} for 1..max(known)+200 to find beta and unranked maps. */
-export async function mapsWalk(ctx: PollerContext): Promise<JobResult> {
+export async function mapsWalk(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   const [mx] = (await execRows(
     ctx.db,
     sql`select coalesce(max(id), 0)::int as max from maps`,
@@ -198,8 +220,10 @@ export async function mapsWalk(ctx: PollerContext): Promise<JobResult> {
   let seen = 0;
   let found = 0;
   let notFound = 0;
+  let last = cursor.nextId - 1;
   for (let id = cursor.nextId; id <= cursor.maxId; id++) {
-    if (ctx.scheduler.signal.aborted) break;
+    if (signal.aborted) break;
+    if (id % 10 === 0) progress({ done: id, total: cursor.maxId, note: `found=${found}` });
     seen += 1;
     try {
       const r = await fetchAndObserveMap(ctx, id);
@@ -210,13 +234,19 @@ export async function mapsWalk(ctx: PollerContext): Promise<JobResult> {
       else ctx.log.warn('maps-walk probe failed', { mapId: id, error: errMsg(e) });
     }
     if (id % 50 === 0) await setCursor(ctx.db, 'maps-walk', { ...cursor, nextId: id + 1 });
+    last = id;
   }
-  await setCursor(ctx.db, 'maps-walk', { ...cursor, nextId: cursor.maxId + 1 });
+  // A cancelled walk keeps its place and resumes there on the next tick.
+  await setCursor(ctx.db, 'maps-walk', { ...cursor, nextId: last + 1 });
   return { seen, new: found, note: `notFound=${notFound} range=1..${cursor.maxId}` };
 }
 
 /** avatars-fetch: archive any avatar hash we know about but have not stored yet. */
-export async function avatarsFetch(ctx: PollerContext): Promise<JobResult> {
+export async function avatarsFetch(
+  ctx: PollerContext,
+  signal: AbortSignal = ctx.scheduler.signal,
+  progress: ProgressFn = () => {},
+): Promise<JobResult> {
   const rows = (await execRows(
     ctx.db,
     sql`
@@ -232,8 +262,9 @@ export async function avatarsFetch(ctx: PollerContext): Promise<JobResult> {
     limit 500
   `,
   )) as unknown as { hash: string; source: 'momentum' | 'steam' }[];
-  for (const r of rows) {
-    if (ctx.scheduler.signal.aborted) break;
+  for (const [i, r] of rows.entries()) {
+    if (signal.aborted) break;
+    if (i % 20 === 0) progress({ done: i, total: rows.length });
     await ensureAvatarArchived(ctx, r.hash, r.source === 'steam' ? 'steam' : 'momentum');
   }
   const [count] = (await execRows(

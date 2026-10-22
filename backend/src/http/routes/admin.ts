@@ -5,19 +5,25 @@
 import { Type } from '@sinclair/typebox';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { execRows } from '../../db/index.js';
 import { adminSessions, announcements, userNotices } from '../../db/schema.js';
 import { AnyObject, toIso } from '../common.js';
 import type { HttpDeps } from '../deps.js';
 import type { Guard } from '../auth/guard.js';
 import { revokeSession } from '../auth/sessions.js';
+import { REFRESH_KINDS, validRefreshKey } from '../../poller/control.js';
 
 const Level = Type.Union([Type.Literal('info'), Type.Literal('warning'), Type.Literal('critical')]);
 const Scope = Type.Union([Type.Literal('home'), Type.Literal('all')]);
 const Body = Type.String({ minLength: 1, maxLength: 2000 });
 const IdParam = Type.Object({ id: Type.Integer({ minimum: 1, maximum: 2_147_483_647 }) });
 const Hours = Type.Integer({ minimum: 1, maximum: 24 * 90, default: 24 });
+const JobName = Type.String({ pattern: '^[a-z][a-z-]{0,39}$' });
+const Phase = Type.Union(
+  ['runs', 'users', 'maps', 'leaderboards', 'beta-runs'].map((p) => Type.Literal(p)),
+);
+const startedAt = new Date();
 
 export async function registerAdminRoutes(
   app: FastifyInstance,
@@ -565,6 +571,333 @@ export async function registerAdminRoutes(
           updatedAt: toIso(c.updated_at as Date),
         })),
       };
+    },
+  );
+
+  // Poller: what every job is doing right now, and the levers to start, stop and queue work.
+
+  api.get(
+    '/admin/poller',
+    { schema: { tags: ['admin'], hide: true, response: { 200: AnyObject } } },
+    async (req, reply) => {
+      if (!(await guard.requireAdmin(req, reply))) return reply;
+      const st = deps.status;
+      const recent = (await execRows(
+        db,
+        sql`select job, count(*)::int as runs,
+                   count(*) filter (where ok = false)::int as failures,
+                   coalesce(round(avg(extract(epoch from finished_at - started_at) * 1000)
+                     filter (where finished_at is not null))::int, 0) as avg_ms,
+                   coalesce(sum(api_calls), 0)::int as api_calls
+            from poll_log where started_at > now() - interval '24 hours' group by job`,
+      )) as unknown as Record<string, unknown>[];
+      const byJob = new Map(recent.map((r) => [r.job as string, r]));
+      const refresh = (await execRows(
+        db,
+        sql`select kind, count(*) filter (where started_at is null)::int as pending,
+                   count(*) filter (where started_at is not null)::int as in_flight,
+                   count(*) filter (where priority <= 1)::int as urgent,
+                   max(attempts)::int as max_attempts, min(enqueued_at) as oldest
+            from refresh_queue group by kind order by kind`,
+      )) as unknown as Record<string, unknown>[];
+      const [replay] = (await execRows(
+        db,
+        sql`select count(*) filter (where state = 'pending')::int as pending,
+                   count(*) filter (where state = 'in_flight')::int as in_flight,
+                   count(*) filter (where state = 'failed')::int as failed,
+                   min(enqueued_at) filter (where state = 'pending') as oldest
+            from replay_queue`,
+      )) as unknown as Record<string, unknown>[];
+      const [lost] = (await execRows(
+        db,
+        sql`select count(*) filter (where gave_up)::int as gave_up,
+                   count(*) filter (where gave_up and last_status = 404)::int as gone_404,
+                   count(*) filter (where not gave_up)::int as retrying
+            from replay_fetch_failures`,
+      )) as unknown as Record<string, unknown>[];
+      const replayFailures = (await execRows(
+        db,
+        sql`select sha1, attempts, last_status, last_error, last_failed_at, gave_up
+            from replay_fetch_failures order by last_failed_at desc limit 20`,
+      )) as unknown as Record<string, unknown>[];
+      const fetchFailures = (await execRows(
+        db,
+        sql`select kind, count(*)::int as n, count(*) filter (where gave_up)::int as gave_up,
+                   max(last_at) as last_at
+            from fetch_failures group by kind order by n desc`,
+      )) as unknown as Record<string, unknown>[];
+      const cursors = (await execRows(
+        db,
+        sql`select job, cursor, updated_at from sync_state where job in ('backfill', 'maps-walk')`,
+      )) as unknown as { job: string; cursor: Record<string, unknown>; updated_at: Date }[];
+      const mem = process.memoryUsage();
+      const mom = st.momentum();
+      const steam = st.steam();
+      const sh = st.steamHistory();
+      return {
+        pollerEnabled: st.pollerEnabled,
+        controllable: Boolean(deps.control?.enabled),
+        process: {
+          startedAt: toIso(startedAt),
+          uptimeS: Math.round(process.uptime()),
+          node: process.version,
+          rssBytes: mem.rss,
+          heapUsedBytes: mem.heapUsed,
+          heapTotalBytes: mem.heapTotal,
+          schema: deps.schemaVersion,
+          gamemodes: deps.cfg.ARCHIVE_GAMEMODES,
+        },
+        jobs: st.jobs().map((j) => {
+          const r = byJob.get(j.name);
+          return {
+            name: j.name,
+            worker: j.worker,
+            manual: j.manual,
+            running: j.running,
+            cancelRequested: j.cancelRequested,
+            progress: j.progress ? { ...j.progress, at: toIso(j.progress.at) } : null,
+            intervalMs: j.intervalMs,
+            lastStartAt: toIso(j.lastStartAt),
+            lastFinishAt: toIso(j.lastFinishAt),
+            lastSuccessAt: toIso(j.lastSuccessAt),
+            lastError: j.lastError,
+            lastItemsSeen: j.lastItemsSeen,
+            lastItemsNew: j.lastItemsNew,
+            lastDurationMs: j.lastDurationMs,
+            nextRunAt: toIso(j.nextRunAt),
+            runs: j.runs,
+            failures: j.failures,
+            day: {
+              runs: Number(r?.runs ?? 0),
+              failures: Number(r?.failures ?? 0),
+              avgMs: Number(r?.avg_ms ?? 0),
+              apiCalls: Number(r?.api_calls ?? 0),
+            },
+          };
+        }),
+        clients: {
+          momentum: {
+            ...mom,
+            lastCallAt: toIso(mom.lastCallAt),
+            lastOkAt: toIso(mom.lastOkAt),
+            rps: deps.cfg.RATE_LIMIT_RPS,
+            rpm: deps.cfg.RATE_LIMIT_RPM,
+          },
+          steam: steam ? { ...steam, lastCallAt: toIso(steam.lastCallAt) } : null,
+          steamHistory: sh ? { ...sh, lastCallAt: toIso(sh.lastCallAt) } : null,
+        },
+        queues: {
+          refresh: refresh.map((r) => ({
+            kind: r.kind,
+            pending: Number(r.pending),
+            inFlight: Number(r.in_flight),
+            urgent: Number(r.urgent),
+            maxAttempts: Number(r.max_attempts),
+            oldest: toIso(r.oldest as Date | null),
+          })),
+          replay: {
+            pending: Number(replay?.pending ?? 0),
+            inFlight: Number(replay?.in_flight ?? 0),
+            failed: Number(replay?.failed ?? 0),
+            oldest: toIso((replay?.oldest as Date | null) ?? null),
+            gaveUp: Number(lost?.gave_up ?? 0),
+            gone404: Number(lost?.gone_404 ?? 0),
+            retrying: Number(lost?.retrying ?? 0),
+          },
+          replayFailures: replayFailures.map((f) => ({
+            sha1: f.sha1,
+            attempts: Number(f.attempts),
+            lastStatus: f.last_status === null ? null : Number(f.last_status),
+            lastError: f.last_error,
+            lastFailedAt: toIso(f.last_failed_at as Date),
+            gaveUp: f.gave_up,
+          })),
+          fetchFailures: fetchFailures.map((f) => ({
+            kind: f.kind,
+            n: Number(f.n),
+            gaveUp: Number(f.gave_up),
+            lastAt: toIso(f.last_at as Date),
+          })),
+        },
+        cursors: Object.fromEntries(
+          cursors.map((c) => [c.job, { ...c.cursor, updatedAt: toIso(c.updated_at) }]),
+        ),
+      };
+    },
+  );
+
+  api.get(
+    '/admin/poller/history',
+    {
+      schema: {
+        tags: ['admin'],
+        hide: true,
+        querystring: Type.Object({
+          job: Type.Optional(JobName),
+          limit: Type.Integer({ minimum: 1, maximum: 200, default: 50 }),
+        }),
+        response: { 200: AnyObject },
+      },
+    },
+    async (req, reply) => {
+      if (!(await guard.requireAdmin(req, reply))) return reply;
+      const job = req.query.job ?? null;
+      const rows = (await execRows(
+        db,
+        sql`select id, job, started_at, finished_at, ok, items_seen, items_new, api_calls, error
+            from poll_log where (${job}::text is null or job = ${job})
+            order by started_at desc limit ${req.query.limit}`,
+      )) as unknown as Record<string, unknown>[];
+      return {
+        data: rows.map((r) => ({
+          id: Number(r.id),
+          job: r.job,
+          startedAt: toIso(r.started_at as Date),
+          finishedAt: toIso(r.finished_at as Date | null),
+          ok: r.ok,
+          itemsSeen: Number(r.items_seen),
+          itemsNew: Number(r.items_new),
+          apiCalls: Number(r.api_calls),
+          error: r.error,
+        })),
+      };
+    },
+  );
+
+  const noPoller = (reply: FastifyReply) =>
+    reply.code(409).send({
+      error: 'poller_disabled',
+      statusCode: 409,
+      message: 'POLLER_ENABLED is false in this process, so there is nothing to start.',
+    });
+
+  api.post(
+    '/admin/poller/jobs/:name/start',
+    {
+      schema: {
+        tags: ['admin'],
+        hide: true,
+        params: Type.Object({ name: JobName }),
+        body: Type.Object(
+          { phase: Type.Optional(Phase), only: Type.Optional(Phase) },
+          { additionalProperties: false },
+        ),
+        response: { 202: AnyObject, 400: AnyObject, 404: AnyObject, 409: AnyObject },
+      },
+    },
+    async (req, reply) => {
+      const s = await guard.requireWrite(req, reply);
+      if (!s) return reply;
+      const control = deps.control;
+      if (!control?.enabled) return noPoller(reply);
+      const name = req.params.name;
+      const args = name === 'backfill' ? { ...req.body } : undefined;
+      const r = await control.start(name, args);
+      if (r === 'unknown') return reply.code(404).send({ error: 'unknown_job', statusCode: 404 });
+      if (r === 'worker') {
+        return reply.code(400).send({
+          error: 'worker',
+          statusCode: 400,
+          message: 'This is a continuous worker; it is always running.',
+        });
+      }
+      if (r !== 'started') {
+        const message =
+          r === 'running'
+            ? 'Already running.'
+            : r === 'busy-elsewhere'
+              ? 'The backfill cursor moved in the last few minutes from another process (pnpm sync?).'
+              : 'The scheduler is shutting down.';
+        return reply.code(409).send({ error: r, statusCode: 409, message });
+      }
+      await guard.audit(s, req, 'poller.start', name, args);
+      return reply.code(202).send({ ok: true, job: name });
+    },
+  );
+
+  api.post(
+    '/admin/poller/jobs/:name/cancel',
+    {
+      schema: {
+        tags: ['admin'],
+        hide: true,
+        params: Type.Object({ name: JobName }),
+        response: { 200: AnyObject, 409: AnyObject },
+      },
+    },
+    async (req, reply) => {
+      const s = await guard.requireWrite(req, reply);
+      if (!s) return reply;
+      if (!deps.control?.enabled) return noPoller(reply);
+      if (!deps.control.cancel(req.params.name)) {
+        return reply
+          .code(409)
+          .send({ error: 'not_running', statusCode: 409, message: 'That job is not running.' });
+      }
+      await guard.audit(s, req, 'poller.cancel', req.params.name);
+      return { ok: true };
+    },
+  );
+
+  api.post(
+    '/admin/poller/refresh',
+    {
+      schema: {
+        tags: ['admin'],
+        hide: true,
+        body: Type.Object(
+          {
+            kind: Type.Union(REFRESH_KINDS.map((k) => Type.Literal(k))),
+            key: Type.String({ minLength: 1, maxLength: 40 }),
+          },
+          { additionalProperties: false },
+        ),
+        response: { 200: AnyObject, 400: AnyObject, 409: AnyObject },
+      },
+    },
+    async (req, reply) => {
+      const s = await guard.requireWrite(req, reply);
+      if (!s) return reply;
+      if (!deps.control) return noPoller(reply);
+      const { kind } = req.body;
+      const key = req.body.key.trim();
+      if (!validRefreshKey(kind, key)) {
+        return reply.code(400).send({
+          error: 'bad_request',
+          statusCode: 400,
+          message:
+            kind === 'leaderboard'
+              ? 'A leaderboard key is mapId:gamemode:trackType:trackNum:style.'
+              : 'The key is a positive integer id.',
+        });
+      }
+      await deps.control.refresh(kind, key);
+      await guard.audit(s, req, 'poller.refresh', `${kind}:${key}`);
+      return { ok: true, kind, key };
+    },
+  );
+
+  api.post(
+    '/admin/poller/replays/requeue',
+    {
+      schema: {
+        tags: ['admin'],
+        hide: true,
+        body: Type.Object(
+          { include404: Type.Optional(Type.Boolean()) },
+          { additionalProperties: false },
+        ),
+        response: { 200: AnyObject, 409: AnyObject },
+      },
+    },
+    async (req, reply) => {
+      const s = await guard.requireWrite(req, reply);
+      if (!s) return reply;
+      if (!deps.control) return noPoller(reply);
+      const include404 = req.body.include404 ?? false;
+      const n = await deps.control.requeueReplays(include404);
+      await guard.audit(s, req, 'poller.requeue-replays', null, { include404, requeued: n });
+      return { ok: true, requeued: n };
     },
   );
 

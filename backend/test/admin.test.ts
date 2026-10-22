@@ -3,7 +3,7 @@
 // configured owner gets nothing, and a real session still cannot write without
 // the Origin and CSRF checks.
 import { Readable } from 'node:stream';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { loadConfig } from '../src/config.js';
 import { execRows } from '../src/db/index.js';
@@ -11,6 +11,10 @@ import { buildApp, type App } from '../src/http/app.js';
 import { createSession, cookieName, SESSION_COOKIE } from '../src/http/auth/sessions.js';
 import { verifyCallback } from '../src/http/auth/steam-openid.js';
 import { getLogger } from '../src/logger.js';
+import type { MomentumClient } from '../src/momentum/client.js';
+import type { PollerContext } from '../src/poller/context.js';
+import { createPollerControl } from '../src/poller/control.js';
+import { Scheduler } from '../src/poller/scheduler.js';
 import type { Storage } from '../src/storage/s3.js';
 import { createTestDb, type TestDb } from './db-helper.js';
 
@@ -34,6 +38,8 @@ const env = {
 
 let t: TestDb;
 let app: App;
+let scheduler: Scheduler;
+let releaseSlow: () => void = () => {};
 let sessionToken = '';
 let csrf = '';
 const cookie = cookieName(SESSION_COOKIE, false);
@@ -51,6 +57,27 @@ beforeAll(async () => {
       status: 200,
     }),
   } as unknown as Storage;
+  // A real scheduler with stand in jobs: the panel drives it exactly as it drives the poller.
+  const mom = { stats: () => ({ callsTotal: 0 }) } as unknown as MomentumClient;
+  scheduler = new Scheduler(t.db, mom, getLogger('scheduler-test'));
+  scheduler.register({
+    name: 'slow-sweep',
+    intervalMs: 3600_000,
+    run: (signal, progress) =>
+      new Promise((resolve) => {
+        progress({ done: 3, total: 10, note: 'halfway-ish' });
+        releaseSlow = () => resolve({ seen: 10, new: 2 });
+        signal.addEventListener('abort', () => resolve({ seen: 3 }));
+      }),
+  });
+  scheduler.register({ name: 'backfill', intervalMs: 0, manual: true, run: async () => ({}) });
+  scheduler.register({
+    name: 'replay-download',
+    intervalMs: 0,
+    worker: true,
+    run: async () => {},
+  });
+  const ctx = { db: t.db, scheduler, log: getLogger('poller-test') } as unknown as PollerContext;
   app = await buildApp({
     cfg,
     db: t.db,
@@ -58,10 +85,11 @@ beforeAll(async () => {
     dbSql: (async () => [{ '?column?': 1 }]) as never,
     storage,
     schemaVersion: 4,
+    control: createPollerControl(ctx, true),
     log: getLogger('admin-test'),
     status: {
       pollerEnabled: true,
-      jobs: () => [],
+      jobs: () => scheduler.statuses(),
       momentum: () => ({
         lastCallAt: null,
         lastOkAt: null,
@@ -97,6 +125,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await scheduler.stop();
   await app.close();
   await t.close();
 });
@@ -124,6 +153,8 @@ describe('admin panel access', () => {
       '/api/admin/requests/summary',
       '/api/admin/audit',
       '/api/admin/sessions',
+      '/api/admin/poller',
+      '/api/admin/poller/history',
     ]) {
       const r = await app.inject({ url });
       expect(r.statusCode, url).toBe(401);
@@ -277,6 +308,151 @@ describe('admin panel access', () => {
     expect(r.statusCode).toBe(405);
     const d = await app.inject({ method: 'DELETE', url: '/api/runs/1' });
     expect(d.statusCode).toBe(405);
+  });
+});
+
+describe('poller controls', () => {
+  const start = (name: string, payload: Record<string, unknown> = {}, headers = writeHeaders()) =>
+    app.inject({ method: 'POST', url: `/api/admin/poller/jobs/${name}/start`, headers, payload });
+
+  it('refuses to start anything without a session or without the CSRF token', async () => {
+    expect((await start('slow-sweep', {}, {} as never)).statusCode).toBe(401);
+    expect(
+      (await start('slow-sweep', {}, authed({ origin: 'https://momarchive.org' }))).statusCode,
+    ).toBe(403);
+    const refresh = await app.inject({
+      method: 'POST',
+      url: '/api/admin/poller/refresh',
+      headers: authed({ origin: 'https://momarchive.org' }),
+      payload: { kind: 'user', key: '14991' },
+    });
+    expect(refresh.statusCode).toBe(403);
+    expect(scheduler.statuses().find((j) => j.name === 'slow-sweep')!.runs).toBe(0);
+  });
+
+  it('starts a job, shows its progress, refuses a second start and cancels it', async () => {
+    const r = await start('slow-sweep');
+    expect(r.statusCode).toBe(202);
+    const again = await start('slow-sweep');
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('running');
+
+    const live = await app.inject({ url: '/api/admin/poller', headers: authed() });
+    expect(live.statusCode).toBe(200);
+    const job = (live.json().jobs as { name: string }[]).find((j) => j.name === 'slow-sweep');
+    expect(job).toMatchObject({ running: true, progress: { done: 3, total: 10 } });
+
+    const cancel = await app.inject({
+      method: 'POST',
+      url: '/api/admin/poller/jobs/slow-sweep/cancel',
+      headers: writeHeaders(),
+    });
+    expect(cancel.statusCode).toBe(200);
+    await vi.waitFor(() =>
+      expect(scheduler.statuses().find((j) => j.name === 'slow-sweep')!.running).toBe(false),
+    );
+    const st = scheduler.statuses().find((j) => j.name === 'slow-sweep')!;
+    expect(st.lastItemsSeen).toBe(3);
+    expect(st.nextRunAt).not.toBeNull();
+
+    const notRunning = await app.inject({
+      method: 'POST',
+      url: '/api/admin/poller/jobs/slow-sweep/cancel',
+      headers: writeHeaders(),
+    });
+    expect(notRunning.statusCode).toBe(409);
+
+    const hist = await app.inject({
+      url: '/api/admin/poller/history?job=slow-sweep',
+      headers: authed(),
+    });
+    expect(hist.json().data[0]).toMatchObject({ job: 'slow-sweep', ok: true, itemsSeen: 3 });
+  });
+
+  it('runs a job to the end when left alone', async () => {
+    expect((await start('slow-sweep')).statusCode).toBe(202);
+    releaseSlow();
+    await vi.waitFor(() =>
+      expect(scheduler.statuses().find((j) => j.name === 'slow-sweep')!.running).toBe(false),
+    );
+    expect(scheduler.statuses().find((j) => j.name === 'slow-sweep')!.lastItemsNew).toBe(2);
+  });
+
+  it('only starts registered jobs, never a worker, and validates the backfill phase', async () => {
+    expect((await start('no-such-job')).statusCode).toBe(404);
+    expect((await start('replay-download')).statusCode).toBe(400);
+    expect((await start('Bad_Name')).statusCode).toBe(400);
+    expect((await start('backfill', { phase: 'everything' })).statusCode).toBe(400);
+    expect((await start('backfill', { phase: 'users', sql: 'drop' })).statusCode).toBe(400);
+  });
+
+  it('will not start a second backfill while another process is walking', async () => {
+    await execRows(
+      t.db,
+      sql`insert into sync_state (job, cursor, updated_at)
+          values ('backfill', ${JSON.stringify({ phase: 'runs', updatedAt: new Date().toISOString() })}::jsonb, now())`,
+    );
+    const r = await start('backfill', { phase: 'runs' });
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error).toBe('busy-elsewhere');
+  });
+
+  it('queues a refresh at the front, and only for well formed keys', async () => {
+    const send = (kind: string, key: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/admin/poller/refresh',
+        headers: writeHeaders(),
+        payload: { kind, key },
+      });
+    expect((await send('user', '14991')).statusCode).toBe(200);
+    expect((await send('leaderboard', '2231:3:0:0:0')).statusCode).toBe(200);
+    for (const [kind, key] of [
+      ['user', '0'],
+      ['user', '12; drop table users'],
+      ['map', '-1'],
+      ['leaderboard', '2231:3:0'],
+      ['steam', '1'],
+    ] as const) {
+      expect((await send(kind, key)).statusCode, `${kind} ${key}`).toBe(400);
+    }
+    const rows = (await execRows(
+      t.db,
+      sql`select kind, key, priority from refresh_queue order by kind`,
+    )) as unknown as { kind: string; key: string; priority: number }[];
+    expect(rows).toEqual([
+      { kind: 'leaderboard', key: '2231:3:0:0:0', priority: 1 },
+      { kind: 'user', key: '14991', priority: 1 },
+    ]);
+  });
+
+  it('requeues failed replay downloads and leaves the 404s alone unless asked', async () => {
+    await execRows(
+      t.db,
+      sql`insert into replay_queue (sha1, state, attempts, next_attempt_at, enqueued_at) values
+          (${'a'.repeat(40)}, 'failed', 5, now(), now()), (${'b'.repeat(40)}, 'failed', 5, now(), now())`,
+    );
+    await execRows(
+      t.db,
+      sql`insert into replay_fetch_failures (sha1, attempts, last_status, first_failed_at, last_failed_at, gave_up) values
+          (${'a'.repeat(40)}, 5, 500, now(), now(), true), (${'b'.repeat(40)}, 5, 404, now(), now(), true)`,
+    );
+    const requeue = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/admin/poller/replays/requeue',
+        headers: writeHeaders(),
+        payload,
+      });
+    expect((await requeue({})).json().requeued).toBe(1);
+    expect((await requeue({ include404: true })).json().requeued).toBe(1);
+  });
+
+  it('audits every lever pulled', async () => {
+    const r = await app.inject({ url: '/api/admin/audit', headers: authed() });
+    const actions = (r.json().data as { action: string }[]).map((a) => a.action);
+    for (const a of ['poller.start', 'poller.cancel', 'poller.refresh', 'poller.requeue-replays'])
+      expect(actions).toContain(a);
   });
 });
 

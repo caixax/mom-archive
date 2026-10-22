@@ -9,6 +9,7 @@ import { sql } from 'drizzle-orm';
 import { errMsg } from '../../logger.js';
 import type { MomPastRun, Paged } from '../../momentum/types.js';
 import type { PollerContext } from '../context.js';
+import type { ProgressFn } from '../scheduler.js';
 import { observeUser } from '../observe.js';
 import { getCursor, identityFromUser, setCursor, ensureAvatarArchived } from './helpers.js';
 import { betaRuns, ingestRuns, type IngestStats } from './runs.js';
@@ -61,6 +62,7 @@ export interface BackfillOptions {
   /** Stop after this phase */
   only?: BackfillPhase;
   signal?: AbortSignal;
+  progress?: ProgressFn;
 }
 
 export async function runBackfill(
@@ -76,6 +78,7 @@ export async function runBackfill(
     c.finishedAt = null;
   }
   const signal = opts.signal ?? ctx.scheduler.signal;
+  const progress = opts.progress ?? (() => {});
   log.info('backfill starting', {
     phase: c.phase,
     runsSkip: c.runsSkip,
@@ -93,17 +96,21 @@ export async function runBackfill(
     // A phase that dies (network blip, API hiccup, database restart) is retried with
     // backoff instead of killing the whole walk; the cursor keeps the position.
     try {
+      const phaseProgress: ProgressFn = (p) =>
+        progress({ ...p, note: [c.phase, p.note].filter(Boolean).join(' ') });
+      phaseProgress({ done: 0, total: null });
       switch (c.phase) {
         case 'runs':
-          await backfillRuns(ctx, c, signal);
+          await backfillRuns(ctx, c, signal, phaseProgress);
           break;
         case 'users':
-          await backfillUsers(ctx, c, signal);
+          await backfillUsers(ctx, c, signal, phaseProgress);
           break;
         case 'maps': {
-          const s = await mapsSweep(ctx);
+          const s = await mapsSweep(ctx, signal, phaseProgress);
           log.info('backfill maps sweep done', { seen: s.seen, new: s.new });
-          const w = await mapsWalk(ctx);
+          if (signal.aborted) break;
+          const w = await mapsWalk(ctx, signal, phaseProgress);
           log.info('backfill maps walk done', { seen: w.seen, found: w.new, note: w.note });
           break;
         }
@@ -113,7 +120,7 @@ export async function runBackfill(
           break;
         }
         case 'beta-runs': {
-          const r = await betaRuns(ctx);
+          const r = await betaRuns(ctx, signal, phaseProgress);
           log.info('backfill beta runs done', { seen: r.seen, new: r.new, note: r.note });
           break;
         }
@@ -150,6 +157,7 @@ async function backfillRuns(
   ctx: PollerContext,
   c: BackfillCursor,
   signal: AbortSignal,
+  progress: ProgressFn,
 ): Promise<void> {
   const log = ctx.log.child({ module: 'backfill' });
   const stats: IngestStats = { seen: 0, stored: 0, newRuns: 0, newReplays: 0, maxId: 0 };
@@ -186,6 +194,7 @@ async function backfillRuns(
       }
     }
     await save(ctx, c);
+    progress({ done: c.runsSkip, total: c.runsTotal, note: `stored=${stats.stored}` });
     if (Date.now() - lastLog > 60_000) {
       lastLog = Date.now();
       log.info('backfill runs progress', {
@@ -212,6 +221,7 @@ async function backfillUsers(
   ctx: PollerContext,
   c: BackfillCursor,
   signal: AbortSignal,
+  progress: ProgressFn,
 ): Promise<void> {
   const log = ctx.log.child({ module: 'backfill' });
   const [mx] = (await execRows(
@@ -245,6 +255,7 @@ async function backfillUsers(
     id += 100;
     c.usersNextId = id;
     if (id % 1000 === 0) await save(ctx, c);
+    progress({ done: id, total: c.usersMaxId || null, note: `seen=${seen}` });
     if (Date.now() - lastLog > 60_000) {
       lastLog = Date.now();
       log.info('backfill users progress', { nextId: id, maxId: c.usersMaxId, seen });

@@ -85,6 +85,7 @@ Sign in is Steam OpenID 2.0, which needs no API key. What the flow proves is whi
 The panel carries:
 
 - **Overview**: row counts for every table, job results and failures, sync cursors, storage totals, runs first seen per day.
+- **Poller**: every scheduler job live, refreshed every few seconds: running or idle, progress of the current run (done of total), last result and duration, next run, runs, failures and API calls over 24 hours, and each job's recent history. Any scheduled job can be started now or asked to stop (it finishes its batch and keeps its cursor); the backfill can be resumed or restarted at a phase. One user, map, leaderboard, follow list, activity feed or run can be put at the front of the refresh queue, and failed replay downloads can be retried. Also shown: refresh and replay queue depths, the latest replay failures, Momentum, Steam and SteamHistory call budgets, and the process's uptime and memory.
 - **Traffic**: requests, unique IPs, user agents, countries, status codes and latency over 1 hour to 30 days; top IPs, routes, agents and countries; and the raw log with filters by IP, route, status and user agent.
 - **Announcements**: a banner on the home page or on every page, with a level and an optional start and end time.
 - **Profile notices**: a note pinned to one archived player's page.
@@ -94,6 +95,7 @@ The panel carries:
 How it is kept honest:
 
 - **The archive cannot be written from the web at all.** The HTTP process reads with `momarchive_ro` and writes only through `momarchive_app`, whose grants (issued by migration `0003`) cover exactly five tables: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`. No hole in the API, however bad, can rewrite a run, a replay or a user. Only the poller, which takes no input from the internet, has the read write role.
+- **The panel can ask the poller to look again, never tell it what to write.** The poller controls reach the scheduler in the same process through a small interface, not through a database handle: start or stop a job named in the scheduler's own registry, queue a refresh whose key must be an integer id (or a `mapId:gamemode:trackType:trackNum:style` leaderboard key), and retry failed replay downloads. Whatever happens next is the poller fetching from Momentum, exactly as it would on its own schedule; nothing in the request becomes archive data. A backfill is refused while another process (a `pnpm sync` in tmux) is moving its cursor. Every one of these actions is audited.
 - Sessions are a 256 bit random token in a `__Host-` prefixed `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only an HMAC of it, so a dump of the table cannot be replayed as a login. Sessions have an idle timeout and an absolute expiry, are revocable, and die the moment a SteamID leaves `ADMIN_STEAM_IDS`.
 - The login round trip is verified against Steam with `check_authentication`; nothing in the callback query string is trusted before that. The `return_to` Steam signs is compared with what this server generated, and it carries a state token that has to match a short lived cookie, so a login cannot be started or replayed from somewhere else.
 - Every write needs the session **and** an `Origin` equal to `PUBLIC_BASE_URL` **and** an `x-csrf-token` derived from the session, compared in constant time.
@@ -286,7 +288,7 @@ Tests never commit replay bytes: the live test keeps the downloaded replay in me
 - The HTTP API reads with the read-only Postgres role; only the poller uses the read-write role. Queries are parameterized through Drizzle / tagged SQL.
 - S3 credentials never reach the browser; downloads stream through `/api/replays/:sha1/download` with `X-Content-Type-Options: nosniff` and `application/octet-stream`.
 - The frontend renders aliases, bios, descriptions and changelogs as text. Social links are built only for allowlisted hosts and validated handles, with `rel="noopener noreferrer nofollow"`.
-- The data API has no write endpoints and no auth, and maintenance is CLI only. The single exception is the owner's panel at `/admin`: see [The owner's panel](#the-owners-panel). It writes through a third role that can only touch its own five tables, so the archive itself stays unwritable from the web, and it does not exist at all unless `APP_SECRET`, `ADMIN_STEAM_IDS` and `DATABASE_URL_APP` are set.
+- The data API has no write endpoints and no auth. The single exception is the owner's panel at `/admin`: see [The owner's panel](#the-owners-panel). It writes through a third role that can only touch its own five tables, so the archive itself stays unwritable from the web, and its poller controls only ask the poller to fetch again. It does not exist at all unless `APP_SECRET`, `ADMIN_STEAM_IDS` and `DATABASE_URL_APP` are set. Everything else in maintenance is the CLI.
 
 ## License
 
