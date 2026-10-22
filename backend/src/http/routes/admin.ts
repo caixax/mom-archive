@@ -670,7 +670,9 @@ export async function registerAdminRoutes(
       const bans = (await execRows(
         db,
         sql`select c.user_id, c.old_value, c.new_value, c.observed_at, u.alias, u.avatar_hash,
-                   (select count(*) from runs r where r.user_id = c.user_id and r.removed_at is not null)::int as removed_runs
+                   (select count(*) from runs r where r.user_id = c.user_id and r.removed_at is not null)::int as removed_runs,
+                   (select p.slug from ledger_posts p where p.subject_user_id = c.user_id and p.kind = 'case'
+                     order by p.created_at desc limit 1) as case_slug
             from user_field_changes c join users u on u.id = c.user_id
             where c.field = 'bans' and c.observed_at > now() - interval '30 days'
             order by c.observed_at desc limit 20`,
@@ -746,6 +748,7 @@ export async function registerAdminRoutes(
             toNames: flagNames(Number(b.new_value ?? 0), BanName),
             at: toIso(b.observed_at as Date),
             removedRuns: Number(b.removed_runs),
+            caseSlug: (b.case_slug as string | null) ?? null,
           })),
         },
       };
@@ -782,6 +785,14 @@ export async function registerAdminRoutes(
             where r.id in ${runIds}`,
       )) as unknown as { id: number; map: string | null; alias: string | null }[];
       for (const r of rs) out.set(`run:${r.id}`, `${r.alias ?? '?'} on ${r.map ?? '?'}`);
+    }
+    const slugs = rows.filter((r) => r.kind === 'ledger').map((r) => r.key);
+    if (slugs.length) {
+      const ps = (await execRows(
+        db,
+        sql`select slug, title from ledger_posts where slug in ${slugs}`,
+      )) as unknown as { slug: string; title: string }[];
+      for (const p of ps) out.set(`ledger:${p.slug}`, p.title);
     }
     const shas = rows.filter((r) => r.kind === 'watch').map((r) => r.key);
     if (shas.length) {

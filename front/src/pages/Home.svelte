@@ -1,6 +1,7 @@
 <script lang="ts">
   import Avatar from '../components/Avatar.svelte';
   import { api, type ChangeRow, type Paged } from '../lib/api';
+  import { KIND_LABEL, type LedgerSummary } from '../lib/ledger';
   import {
     formatBytes,
     formatDate,
@@ -46,6 +47,7 @@
   let stats = $state<Stats | null>(null);
   let records = $state<WrRow[]>([]);
   let bans = $state<ChangeRow[]>([]);
+  let ledger = $state<LedgerSummary[]>([]);
   let error = $state<string | null>(null);
 
   $effect(() => {
@@ -57,6 +59,9 @@
       .catch(() => undefined);
     api<Paged<ChangeRow>>('/api/changes', { type: 'ban', take: 8 })
       .then((c) => (bans = c.data))
+      .catch(() => undefined);
+    api<Paged<LedgerSummary>>('/api/ledger', { take: 4 })
+      .then((l) => (ledger = l.data))
       .catch(() => undefined);
   });
 </script>
@@ -73,6 +78,23 @@
 
 {#if error}
   <p class="error">Could not load stats: {error}</p>
+{/if}
+
+{#if ledger.length}
+  <section class="ledger">
+    <h2>From the <a href="/ledger">Ledger</a></h2>
+    <ul>
+      {#each ledger as p (p.id)}
+        <li>
+          <span class="badge {p.kind === 'case' ? 'err' : p.kind === 'concern' ? 'warn' : 'accent'}"
+            >{KIND_LABEL[p.kind]}</span
+          >
+          <a href={`/ledger/${p.slug}`}>{p.title}</a>
+          <span class="muted small mono">{formatDate(p.publishedAt, false)}</span>
+        </li>
+      {/each}
+    </ul>
+  </section>
 {/if}
 
 {#if stats}
@@ -209,3 +231,17 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .ledger ul {
+    list-style: none;
+    padding: 0;
+    margin: 0.3rem 0 1rem;
+  }
+  .ledger li {
+    padding: 0.25rem 0;
+  }
+  .ledger .badge {
+    margin: 0 0.4rem 0 0;
+  }
+</style>

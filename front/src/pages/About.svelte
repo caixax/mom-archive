@@ -120,6 +120,15 @@
   <a href="/api/openapi.json" rel="external">/api/openapi.json</a> for the machine readable spec.
 </p>
 
+<h2>The Ledger</h2>
+<p>
+  The <a href="/ledger">Ledger</a> is where whoever runs this archive writes things down: bans and removed
+  runs that Momentum applied without saying anything in public, news, concerns about the game or its data,
+  and changes to this site. A case states what the archive observed, with a link to each record (the player,
+  every removed run, every saved replay), and keeps opinion apart from it. Posts are never quietly rewritten:
+  when a published post is edited, the text it had before stays readable from the post itself.
+</p>
+
 <h2>Banners and profile notes</h2>
 <p>
   A banner at the top of a page, or a note on a player's page, is written by whoever runs this

@@ -7,11 +7,13 @@
   import { loadSession, send, session, WriteError } from '../lib/session.svelte';
   import { route } from '../lib/router.svelte';
   import Dashboard from '../admin/Dashboard.svelte';
+  import LedgerAdmin from '../admin/LedgerAdmin.svelte';
 
   type Tab =
     | 'dashboard'
     | 'overview'
     | 'poller'
+    | 'ledger'
     | 'traffic'
     | 'announcements'
     | 'notices'
@@ -618,6 +620,25 @@
     else if (t === 'sessions') void loadSessions();
   });
 
+  let ledgerOpenId = $state<number | null>(null);
+
+  /** A ban on the dashboard becomes a case draft filled with the archive's records. */
+  async function draftCase(userId: number) {
+    busy = true;
+    try {
+      const r = await send<{ data: { id: number } }>('POST', '/api/admin/ledger/draft-case', {
+        userId,
+      });
+      ledgerOpenId = r.data.id;
+      openTab('ledger');
+      done('Case drafted from the archive records. Add the context and publish when ready.');
+    } catch (e) {
+      fail(e);
+    } finally {
+      busy = false;
+    }
+  }
+
   function openTab(t: Tab) {
     tab = t;
     error = null;
@@ -627,6 +648,7 @@
   const tabs: [Tab, string][] = [
     ['dashboard', 'Dashboard'],
     ['overview', 'Archive'],
+    ['ledger', 'Ledger'],
     ['poller', 'Poller'],
     ['traffic', 'Traffic'],
     ['announcements', 'Announcements'],
@@ -674,7 +696,14 @@
   {#if note}<p class="notice">{note}</p>{/if}
 
   {#if tab === 'dashboard'}
-    <Dashboard go={(t) => openTab(t as Tab)} />
+    <Dashboard go={(t) => openTab(t as Tab)} {draftCase} />
+  {/if}
+
+  {#if tab === 'ledger'}
+    <LedgerAdmin
+      openId={ledgerOpenId}
+      onmessage={(kind, text) => (kind === 'ok' ? done(text) : fail(new Error(text)))}
+    />
   {/if}
 
   {#if tab === 'overview'}

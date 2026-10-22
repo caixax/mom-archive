@@ -13,7 +13,9 @@ import { createGuard, clientIp, userAgent } from './auth/guard.js';
 import type { HttpDeps } from './deps.js';
 import { normalizePath, RequestLogger } from './request-log.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerAdminLedgerRoutes } from './routes/admin-ledger.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerLedgerRoutes } from './routes/ledger.js';
 import { registerMapRoutes } from './routes/maps.js';
 import { registerMiscRoutes } from './routes/misc.js';
 import { registerPageViewRoutes } from './routes/pv.js';
@@ -214,8 +216,10 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
       await registerReplayRoutes(api, deps);
       await registerSearchRoutes(api, deps);
       await registerPageViewRoutes(api, deps);
+      await registerLedgerRoutes(api, deps);
       await registerAuthRoutes(api, deps, guard);
       await registerAdminRoutes(api, deps, guard);
+      await registerAdminLedgerRoutes(api, deps, guard);
     },
     { prefix: '/api' },
   );

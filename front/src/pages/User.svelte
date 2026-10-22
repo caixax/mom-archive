@@ -13,6 +13,7 @@
     STYLES,
     valueLabel,
   } from '../lib/format';
+  import type { LedgerSummary } from '../lib/ledger';
   import { route, setQuery } from '../lib/router.svelte';
 
   let { id }: { id: string } = $props();
@@ -105,6 +106,7 @@
   let user = $state<Detail | null>(null);
   let runs = $state<Paged<RunRow> | null>(null);
   let followEvents = $state<FollowEvent[]>([]);
+  let cases = $state<LedgerSummary[]>([]);
   let error = $state<string | null>(null);
 
   const gamemode = $derived(route.query.get('gamemode') ?? '');
@@ -121,6 +123,10 @@
     api<Paged<FollowEvent>>(`/api/users/${encodeURIComponent(id)}/follow-events`, { take: 50 })
       .then((r) => (followEvents = r.data))
       .catch(() => undefined);
+    if (/^\d+$/.test(id))
+      api<Paged<LedgerSummary>>('/api/ledger', { subject: id, take: 5 })
+        .then((r) => (cases = r.data))
+        .catch(() => undefined);
   });
   $effect(() => {
     api<Paged<RunRow>>(`/api/users/${encodeURIComponent(id)}/runs`, {
@@ -149,6 +155,12 @@
 {:else}
   {#each user.notices ?? [] as n (n.id)}
     <div class="notice-pin {n.level}" role="note">{n.body}</div>
+  {/each}
+  {#each cases as c (c.id)}
+    <div class="notice-pin warning" role="note">
+      The Ledger has a {c.kind === 'case' ? 'case' : 'post'} about this player:
+      <a href={`/ledger/${c.slug}`}>{c.title}</a>
+    </div>
   {/each}
   <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
     <Avatar hash={user.avatarHash} size="lg" alt="" />

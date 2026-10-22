@@ -793,6 +793,54 @@ export const trafficDayKeys = pgTable(
   ],
 );
 
+// The Ledger: the owner's posts, in Markdown, with earlier versions of published
+// posts kept so nothing is ever quietly rewritten.
+
+export const ledgerPosts = pgTable(
+  'ledger_posts',
+  {
+    id: serial('id').primaryKey(),
+    slug: text('slug').notNull(),
+    /** case | news | concern | changelog */
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    summary: text('summary'),
+    body: text('body').notNull(),
+    /** draft | published */
+    status: text('status').notNull().default('draft'),
+    pinned: boolean('pinned').notNull().default(false),
+    /** The archived player a case is about, so their page can link to it */
+    subjectUserId: integer('subject_user_id'),
+    publishedAt: ts('published_at'),
+    /** Last change to a published post's text; drafts do not count */
+    editedAt: ts('edited_at'),
+    createdAt: ts('created_at').notNull(),
+    updatedAt: ts('updated_at').notNull(),
+    createdBy: text('created_by'),
+  },
+  (t) => [
+    uniqueIndex('ledger_posts_slug_idx').on(t.slug),
+    index('ledger_posts_published_idx').on(t.status, t.publishedAt),
+    index('ledger_posts_subject_idx').on(t.subjectUserId),
+  ],
+);
+
+/** The text a published post had between valid_from and valid_to. */
+export const ledgerRevisions = pgTable(
+  'ledger_revisions',
+  {
+    id: serial('id').primaryKey(),
+    postId: integer('post_id').notNull(),
+    title: text('title').notNull(),
+    summary: text('summary'),
+    body: text('body').notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to').notNull(),
+    note: text('note'),
+  },
+  (t) => [index('ledger_revisions_post_idx').on(t.postId, t.validTo)],
+);
+
 export const schemaTables = {
   adminSessions,
   announcements,
@@ -833,6 +881,8 @@ export const schemaTables = {
   kv,
   trafficDays,
   trafficDayKeys,
+  ledgerPosts,
+  ledgerRevisions,
 };
 
 export const nowSql = sql`now()`;

@@ -104,6 +104,23 @@
       path: 'GET /api/announcements',
       desc: 'Active site banners, as plain text with a level and a scope. Render them as text.',
     },
+    {
+      path: 'GET /api/ledger?kind=&subject=&page=',
+      desc: 'Published Ledger posts (cases, news, concerns, site updates), pinned first. subject filters cases about one Momentum user id.',
+    },
+    {
+      path: 'GET /api/ledger/:slug',
+      desc: 'One post: its Markdown source, and the list of earlier versions if it was edited after publishing.',
+    },
+    {
+      path: 'GET /api/ledger/:slug/revisions/:id',
+      desc: 'The text a post had before an edit.',
+    },
+    { path: 'GET /api/ledger/feed.xml', desc: 'RSS 2.0 feed of the Ledger.' },
+    {
+      path: 'GET /api/refs?users=&runs=&maps=&replays=',
+      desc: 'Short descriptions of up to 200 users, runs, maps (id or name) and replays (sha1) at once, comma separated. Used by the [[kind:id]] references in posts.',
+    },
     { path: 'GET /api/about', desc: 'What this instance archives and since when.' },
     { path: 'GET /api/health', desc: 'Liveness: { ok, schema }.' },
     {

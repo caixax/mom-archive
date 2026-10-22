@@ -14,6 +14,7 @@ The canonical hostname is `momarchive.org`. `www.momarchive.org` and the hostnam
 - [What is archived](#what-is-archived)
 - [What cannot be rescued](#what-cannot-be-rescued)
 - [Replay playback](#replay-playback)
+- [The Ledger](#the-ledger)
 - [The owner's panel](#the-owners-panel)
 - [Momentum API quirks the archive works around](#momentum-api-quirks-the-archive-works-around)
 - [Repository layout](#repository-layout)
@@ -76,6 +77,17 @@ The map has to come from this origin: the official API and CDN send no CORS head
 
 No game files are served: materials a map does not pack itself are drawn as flat colours. Playback needs WebGL2; the page says so and still offers the download when it is missing.
 
+## The Ledger
+
+`/ledger` holds posts written by whoever runs the archive: **cases** (bans and removed runs Momentum applied without a public word, laid out from the archive's own records), **news**, **concerns** and **site updates**. There are no comments.
+
+- Posts are Markdown. The frontend tokenizes it with `marked` and renders the tokens as Svelte components, so nothing is ever inserted as HTML: raw HTML in a post shows up as the characters typed, links are limited to http(s), mail and this site (external ones get `rel="noopener noreferrer nofollow"`), and images only load from the archive's own `/api/maps/images/` and `/api/avatars/` or the Momentum CDN.
+- `[[user:14991]]`, `[[run:123]]`, `[[replay:<sha1>]]` and `[[map:bhop_arcane]]` turn into live references (alias with ban badges, run with time and rank and a removed badge, replay with a watch link), resolved for a whole post in one `GET /api/refs` call.
+- A published post is never quietly rewritten. Editing its title, summary or text keeps the previous text in `ledger_revisions` with the period it was live and an optional note, and the post page lists and serves every earlier version. A published post also keeps its address.
+- Posts can be scheduled: a post published with a future date stays invisible until then.
+- A case can be drafted from a ban on the panel's dashboard: the draft comes filled with the player's timeline (first seen, alias changes, ban flag changes, runs removed per day), a table of every removed run with its rank before removal and its saved replay, Steam and SourceBans records, and a note on what the archive cannot know. The owner adds the context and publishes.
+- A player's page links to every case about them. There is an RSS feed at `/api/ledger/feed.xml`.
+
 ## The owner's panel
 
 There is no public account system: no sign up, no sign in link, no API keys, and the data API stays open to everyone. The one exception is `/admin`, which is not linked from the site and is reached by typing the path.
@@ -86,6 +98,7 @@ The panel carries:
 
 - **Dashboard**: what needs a look (failing jobs, replays that gave up for a reason other than 404, new bans with no case written yet), who is on the site right now, visitors and page views per day with the change against the previous period, the most viewed profiles, maps, runs, replays and pages, referring sites, searches, countries, devices, browsers, systems, bots, API routes and status codes, and the archive's own growth per day (runs, replays, removed runs, ban changes). Windows from one day to one year.
 - **Archive** (was Overview): row counts for every table, job results and failures, sync cursors, storage totals, runs first seen per day.
+- **Ledger**: the post list and an editor with a Markdown toolbar, reference helpers, live preview side by side, keyboard shortcuts, scheduling, an edit note for revisions, and publish, unpublish and delete.
 - **Poller**: every scheduler job live, refreshed every few seconds: running or idle, progress of the current run (done of total), last result and duration, next run, runs, failures and API calls over 24 hours, and each job's recent history. Any scheduled job can be started now or asked to stop (it finishes its batch and keeps its cursor); the backfill can be resumed or restarted at a phase. One user, map, leaderboard, follow list, activity feed or run can be put at the front of the refresh queue, and failed replay downloads can be retried. Also shown: refresh and replay queue depths, the latest replay failures, Momentum, Steam and SteamHistory call budgets, and the process's uptime and memory.
 - **Traffic**: requests, unique IPs, user agents, countries, status codes and latency over 1 hour to 30 days; top IPs, routes, agents and countries; and the raw log with filters by IP, route, status and user agent.
 - **Announcements**: a banner on the home page or on every page, with a level and an optional start and end time.
@@ -95,7 +108,7 @@ The panel carries:
 
 How it is kept honest:
 
-- **The archive cannot be written from the web at all.** The HTTP process reads with `momarchive_ro` and writes only through `momarchive_app`, whose grants (issued by migration `0003`) cover exactly five tables: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`. No hole in the API, however bad, can rewrite a run, a replay or a user. Only the poller, which takes no input from the internet, has the read write role.
+- **The archive cannot be written from the web at all.** The HTTP process reads with `momarchive_ro` and writes only through `momarchive_app`, whose grants (issued by migrations `0003` and `0005`) cover exactly the panel's own tables: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`, `ledger_posts`, `ledger_revisions`. No hole in the API, however bad, can rewrite a run, a replay or a user. Only the poller, which takes no input from the internet, has the read write role.
 - **The panel can ask the poller to look again, never tell it what to write.** The poller controls reach the scheduler in the same process through a small interface, not through a database handle: start or stop a job named in the scheduler's own registry, queue a refresh whose key must be an integer id (or a `mapId:gamemode:trackType:trackNum:style` leaderboard key), and retry failed replay downloads. Whatever happens next is the poller fetching from Momentum, exactly as it would on its own schedule; nothing in the request becomes archive data. A backfill is refused while another process (a `pnpm sync` in tmux) is moving its cursor. Every one of these actions is audited.
 - Sessions are a 256 bit random token in a `__Host-` prefixed `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only an HMAC of it, so a dump of the table cannot be replayed as a login. Sessions have an idle timeout and an absolute expiry, are revocable, and die the moment a SteamID leaves `ADMIN_STEAM_IDS`.
 - The login round trip is verified against Steam with `check_authentication`; nothing in the callback query string is trusted before that. The `return_to` Steam signs is compared with what this server generated, and it carries a state token that has to match a short lived cookie, so a login cannot be started or replayed from somewhere else.
@@ -135,7 +148,7 @@ mom-archive/
       http/              Fastify app, plugins, routes, OpenAPI
       steam/             Steam Web API and SteamHistory.net clients
       cli/               backfill, reprocess-raw, verify-replays, requeue-replays, refresh-*, job
-    drizzle/             SQL migrations (0000_init, 0001_search_index, 0002_wr_index, 0003_admin)
+    drizzle/             SQL migrations (0000_init, 0001_search_index, 0002_wr_index, 0003_admin, 0004_traffic, 0005_ledger)
     test/                vitest: unit tests + PGlite integration tests + opt-in live tests
   front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
   deploy/
@@ -258,7 +271,7 @@ Postgres 16, Drizzle ORM, migrations in `backend/drizzle` applied on boot (and b
 
 `users`, `user_snapshots`, `user_field_changes`, `avatars`, `steam_profiles`, `steam_profile_snapshots`, `steam_field_changes`, `steam_name_history`, `steam_avatar_history`, `steam_sourcebans`, `follows`, `follow_events`, `maps`, `map_snapshots`, `map_field_changes`, `map_versions`, `map_images`, `map_credits`, `leaderboards`, `runs`, `leaderboard_entries`, `leaderboard_observations`, `leaderboard_snapshots`, `replays`, `replay_queue`, `replay_fetch_failures`, `activities`, `sync_state`, `poll_log`, `refresh_queue`, `fetch_failures`, `kv`, and the `search_index` materialized view (refreshed every 10 minutes).
 
-Five more tables belong to the panel and are the only ones the HTTP process can write: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`.
+Seven more tables belong to the panel and are the only ones the HTTP process can write: `admin_sessions`, `announcements`, `user_notices`, `admin_audit`, `request_log`, `ledger_posts`, `ledger_revisions`. The poller also writes `traffic_days` and `traffic_day_keys`, the daily traffic rollups.
 
 All timestamps are `timestamptz`. Momentum's own `createdAt` is stored as `momentum_created_at`, separate from the archive's `observed_at` / `first_seen_at` / `last_seen_at`.
 
@@ -290,7 +303,7 @@ Tests never commit replay bytes: the live test keeps the downloaded replay in me
 - The HTTP API reads with the read-only Postgres role; only the poller uses the read-write role. Queries are parameterized through Drizzle / tagged SQL.
 - S3 credentials never reach the browser; downloads stream through `/api/replays/:sha1/download` with `X-Content-Type-Options: nosniff` and `application/octet-stream`.
 - The frontend renders aliases, bios, descriptions and changelogs as text. Social links are built only for allowlisted hosts and validated handles, with `rel="noopener noreferrer nofollow"`.
-- The data API has no write endpoints and no auth. The single exception is the owner's panel at `/admin`: see [The owner's panel](#the-owners-panel). It writes through a third role that can only touch its own five tables, so the archive itself stays unwritable from the web, and its poller controls only ask the poller to fetch again. It does not exist at all unless `APP_SECRET`, `ADMIN_STEAM_IDS` and `DATABASE_URL_APP` are set. Everything else in maintenance is the CLI.
+- The data API has no write endpoints and no auth. The single exception is the owner's panel at `/admin`: see [The owner's panel](#the-owners-panel). It writes through a third role that can only touch the panel's own tables, so the archive itself stays unwritable from the web, and its poller controls only ask the poller to fetch again. It does not exist at all unless `APP_SECRET`, `ADMIN_STEAM_IDS` and `DATABASE_URL_APP` are set. Everything else in maintenance is the CLI.
 
 ## License
 

@@ -13,6 +13,8 @@
   import About from './pages/About.svelte';
   import Status from './pages/Status.svelte';
   import Search from './pages/Search.svelte';
+  import Ledger from './pages/Ledger.svelte';
+  import LedgerPost from './pages/LedgerPost.svelte';
   import NotFound from './pages/NotFound.svelte';
   import Banners from './components/Banners.svelte';
 
@@ -32,6 +34,7 @@
     ['/maps', 'Maps'],
     ['/users', 'Users'],
     ['/deleted', 'Deleted runs'],
+    ['/ledger', 'Ledger'],
     ['/status', 'Status'],
     ['/docs', 'API'],
     ['/about', 'About'],
@@ -66,6 +69,8 @@
     if (p === '/about') return { c: About, params: {} };
     if (p === '/status') return { c: Status, params: {} };
     if (p === '/search') return { c: Search, params: {} };
+    if (p === '/ledger') return { c: Ledger, params: {} };
+    if ((m = match('/ledger/:slug', p))) return { c: LedgerPost, params: m };
     return { c: NotFound, params: {} };
   });
 </script>
