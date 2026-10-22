@@ -155,6 +155,7 @@ describe('admin panel access', () => {
       '/api/admin/sessions',
       '/api/admin/poller',
       '/api/admin/poller/history',
+      '/api/admin/dashboard',
     ]) {
       const r = await app.inject({ url });
       expect(r.statusCode, url).toBe(401);
@@ -184,6 +185,17 @@ describe('admin panel access', () => {
     expect(r.json().counts.users).toBe(1);
     const me = await app.inject({ url: '/api/auth/me', headers: authed() });
     expect(me.json()).toMatchObject({ authenticated: true, admin: true, steamId: OWNER });
+  });
+
+  it('serves the dashboard and a page view beacon that stores nothing of its own', async () => {
+    const pv = await app.inject({ url: '/api/pv/users/14991?r=https%3A%2F%2Freddit.com%2F' });
+    expect(pv.statusCode).toBe(204);
+    expect(pv.headers['set-cookie']).toBeUndefined();
+    expect((await app.inject({ url: '/api/pv' })).statusCode).toBe(204);
+    const d = await app.inject({ url: '/api/admin/dashboard?days=7', headers: authed() });
+    expect(d.statusCode).toBe(200);
+    expect(d.json()).toMatchObject({ days: 7, attention: { failingJobs: [] } });
+    expect(d.json().growth).toHaveLength(7);
   });
 
   it('refuses writes without the CSRF token or with a foreign Origin', async () => {

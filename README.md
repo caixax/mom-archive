@@ -84,7 +84,8 @@ Sign in is Steam OpenID 2.0, which needs no API key. What the flow proves is whi
 
 The panel carries:
 
-- **Overview**: row counts for every table, job results and failures, sync cursors, storage totals, runs first seen per day.
+- **Dashboard**: what needs a look (failing jobs, replays that gave up for a reason other than 404, new bans with no case written yet), who is on the site right now, visitors and page views per day with the change against the previous period, the most viewed profiles, maps, runs, replays and pages, referring sites, searches, countries, devices, browsers, systems, bots, API routes and status codes, and the archive's own growth per day (runs, replays, removed runs, ban changes). Windows from one day to one year.
+- **Archive** (was Overview): row counts for every table, job results and failures, sync cursors, storage totals, runs first seen per day.
 - **Poller**: every scheduler job live, refreshed every few seconds: running or idle, progress of the current run (done of total), last result and duration, next run, runs, failures and API calls over 24 hours, and each job's recent history. Any scheduled job can be started now or asked to stop (it finishes its batch and keeps its cursor); the backfill can be resumed or restarted at a phase. One user, map, leaderboard, follow list, activity feed or run can be put at the front of the refresh queue, and failed replay downloads can be retried. Also shown: refresh and replay queue depths, the latest replay failures, Momentum, Steam and SteamHistory call budgets, and the process's uptime and memory.
 - **Traffic**: requests, unique IPs, user agents, countries, status codes and latency over 1 hour to 30 days; top IPs, routes, agents and countries; and the raw log with filters by IP, route, status and user agent.
 - **Announcements**: a banner on the home page or on every page, with a level and an optional start and end time.
@@ -102,6 +103,7 @@ How it is kept honest:
 - Announcement and notice bodies are plain text with a length cap, rendered as text by the frontend like every other string the archive did not write. There is no HTML anywhere in them.
 - nginx only lets `POST`, `PATCH` and `DELETE` through to `/api/auth/` and `/api/admin/`, under their own `limit_req` zone; everything else stays `GET` and `HEAD` only, and the backend enforces the same list again.
 - The request log holds IPs, so it is a rolling window: `REQUEST_LOG_DAYS` (30 by default) and the daily housekeeping job delete the rest. Set `REQUEST_LOG_ENABLED=false` to record nothing.
+- Page views are counted without cookies: the site sends `GET /api/pv/<path>` on each navigation (skipped under Do Not Track and Global Privacy Control), carrying the external referrer on the first page of a visit, and that request's log row is the whole record. Every 15 minutes the poller's `traffic-rollup` job folds the log into `traffic_days` and `traffic_day_keys`: counts per day and top lists, with no IP and no user agent copied, so the history of the numbers outlives the 30 day log.
 
 ## Momentum API quirks the archive works around
 

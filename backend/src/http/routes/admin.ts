@@ -12,7 +12,9 @@ import { AnyObject, toIso } from '../common.js';
 import type { HttpDeps } from '../deps.js';
 import type { Guard } from '../auth/guard.js';
 import { revokeSession } from '../auth/sessions.js';
+import { BanName, flagNames } from '../../momentum/enums.js';
 import { REFRESH_KINDS, validRefreshKey } from '../../poller/control.js';
+import { BOT_UA } from '../../poller/jobs/traffic.js';
 
 const Level = Type.Union([Type.Literal('info'), Type.Literal('warning'), Type.Literal('critical')]);
 const Scope = Type.Union([Type.Literal('home'), Type.Literal('all')]);
@@ -573,6 +575,226 @@ export async function registerAdminRoutes(
       };
     },
   );
+
+  // Dashboard: visitors and pages from the daily rollups, what needs attention,
+  // and how the archive itself grew.
+
+  api.get(
+    '/admin/dashboard',
+    {
+      schema: {
+        tags: ['admin'],
+        hide: true,
+        querystring: Type.Object({
+          days: Type.Integer({ minimum: 1, maximum: 730, default: 30 }),
+        }),
+        response: { 200: AnyObject },
+      },
+    },
+    async (req, reply) => {
+      if (!(await guard.requireAdmin(req, reply))) return reply;
+      const days = req.query.days;
+      const since = sql`(current_date - ${days - 1}::int)`;
+      const prevSince = sql`(current_date - ${2 * days - 1}::int)`;
+      const series = (await execRows(
+        db,
+        sql`select day::text as day, requests, human_requests, bot_requests, api_clients, visitors,
+                   pageviews, errors, rate_limited, bytes, avg_ms, p95_ms
+            from traffic_days where day >= ${since} order by day`,
+      )) as unknown as Record<string, unknown>[];
+      const periodTotals = async (from: ReturnType<typeof sql>, to: ReturnType<typeof sql>) =>
+        (
+          (await execRows(
+            db,
+            sql`select coalesce(sum(pageviews), 0)::bigint as pageviews,
+                       coalesce(sum(visitors), 0)::bigint as visitor_days,
+                       coalesce(max(visitors), 0)::int as peak_visitors,
+                       coalesce(sum(requests), 0)::bigint as requests,
+                       coalesce(sum(bot_requests), 0)::bigint as bot_requests,
+                       coalesce(sum(errors), 0)::bigint as errors,
+                       coalesce(sum(bytes), 0)::bigint as bytes
+                from traffic_days where day >= ${from} and day < ${to}`,
+          )) as unknown as Record<string, unknown>[]
+        )[0] ?? {};
+      const current = numbers(await periodTotals(since, sql`current_date + 1`));
+      const previous = numbers(await periodTotals(prevSince, since));
+
+      const tops = (await execRows(
+        db,
+        sql`select kind, key, n, uniq from (
+              select kind, key, sum(n)::bigint as n, sum(uniq)::bigint as uniq,
+                     row_number() over (partition by kind order by sum(n) desc) as rk
+              from traffic_day_keys where day >= ${since} group by kind, key
+            ) x where rk <= 15 order by kind, n desc`,
+      )) as unknown as { kind: string; key: string; n: string | number; uniq: string | number }[];
+      const labels = await labelKeys(tops);
+      const top: Record<string, { key: string; n: number; uniq: number; label: string | null }[]> =
+        {};
+      for (const t of tops) {
+        (top[t.kind] ??= []).push({
+          key: t.key,
+          n: Number(t.n),
+          uniq: Number(t.uniq),
+          label: labels.get(`${t.kind}:${t.key}`) ?? null,
+        });
+      }
+
+      const [online] = (await execRows(
+        db,
+        sql`select count(distinct ip)::int as visitors, count(*)::int as pageviews
+            from request_log r
+            where at > now() - interval '5 minutes' and path like '/api/pv%' and not admin
+              and not (user_agent is null or user_agent ~* ${BOT_UA})`,
+      )) as unknown as { visitors: number; pageviews: number }[];
+      const onlinePages = (await execRows(
+        db,
+        sql`select coalesce(nullif(rtrim(substr(path, 8), '/'), ''), '/') as page, count(distinct ip)::int as n
+            from request_log
+            where at > now() - interval '5 minutes' and path like '/api/pv%' and not admin
+              and not (user_agent is null or user_agent ~* ${BOT_UA})
+            group by 1 order by 2 desc limit 10`,
+      )) as unknown as { page: string; n: number }[];
+
+      const growthDays = Math.min(days, 90);
+      const growth = (await execRows(
+        db,
+        sql`with d as (select generate_series(current_date - ${growthDays - 1}::int, current_date, interval '1 day')::date as day)
+            select d.day::text as day,
+              (select count(*) from runs r where r.first_seen_at >= d.day and r.first_seen_at < d.day + 1)::int as runs,
+              (select count(*) from replays p where p.downloaded_at >= d.day and p.downloaded_at < d.day + 1)::int as replays,
+              (select count(*) from runs r where r.removed_at >= d.day and r.removed_at < d.day + 1)::int as removed,
+              (select count(*) from user_field_changes c where c.field = 'bans' and c.observed_at >= d.day and c.observed_at < d.day + 1)::int as bans
+            from d order by d.day`,
+      )) as unknown as Record<string, unknown>[];
+
+      const bans = (await execRows(
+        db,
+        sql`select c.user_id, c.old_value, c.new_value, c.observed_at, u.alias, u.avatar_hash,
+                   (select count(*) from runs r where r.user_id = c.user_id and r.removed_at is not null)::int as removed_runs
+            from user_field_changes c join users u on u.id = c.user_id
+            where c.field = 'bans' and c.observed_at > now() - interval '30 days'
+            order by c.observed_at desc limit 20`,
+      )) as unknown as Record<string, unknown>[];
+      const [lost] = (await execRows(
+        db,
+        sql`select count(*) filter (where gave_up and last_failed_at > now() - interval '7 days')::int as lost_7d,
+                   count(*) filter (where gave_up and last_status <> 404 and last_failed_at > now() - interval '7 days')::int as lost_not_404
+            from replay_fetch_failures`,
+      )) as unknown as Record<string, number>[];
+      const failing = deps.status
+        .jobs()
+        .filter(
+          (j) =>
+            j.lastError &&
+            !j.running &&
+            (!j.lastSuccessAt || (j.lastFinishAt && j.lastSuccessAt < j.lastFinishAt)),
+        )
+        .map((j) => ({ name: j.name, error: j.lastError, at: toIso(j.lastFinishAt) }));
+
+      return {
+        days,
+        rollup: {
+          lastComputedAt: toIso(
+            (
+              (await execRows(
+                db,
+                sql`select max(computed_at) as at from traffic_days`,
+              )) as unknown as { at: Date | null }[]
+            )[0]?.at ?? null,
+          ),
+        },
+        online: {
+          visitors: online?.visitors ?? 0,
+          pageviews: online?.pageviews ?? 0,
+          pages: onlinePages,
+        },
+        current,
+        previous,
+        series: series.map((r) => ({
+          day: r.day,
+          requests: Number(r.requests),
+          humanRequests: Number(r.human_requests),
+          botRequests: Number(r.bot_requests),
+          apiClients: Number(r.api_clients),
+          visitors: Number(r.visitors),
+          pageviews: Number(r.pageviews),
+          errors: Number(r.errors),
+          rateLimited: Number(r.rate_limited),
+          bytes: Number(r.bytes),
+          avgMs: Number(r.avg_ms),
+          p95Ms: Number(r.p95_ms),
+        })),
+        top,
+        growth: growth.map((g) => ({
+          day: g.day,
+          runs: Number(g.runs),
+          replays: Number(g.replays),
+          removed: Number(g.removed),
+          bans: Number(g.bans),
+        })),
+        attention: {
+          failingJobs: failing,
+          replaysLost7d: Number(lost?.lost_7d ?? 0),
+          replaysLostNot404: Number(lost?.lost_not_404 ?? 0),
+          bans: bans.map((b) => ({
+            userId: Number(b.user_id),
+            alias: b.alias,
+            avatarHash: b.avatar_hash,
+            from: Number(b.old_value ?? 0),
+            to: Number(b.new_value ?? 0),
+            fromNames: flagNames(Number(b.old_value ?? 0), BanName),
+            toNames: flagNames(Number(b.new_value ?? 0), BanName),
+            at: toIso(b.observed_at as Date),
+            removedRuns: Number(b.removed_runs),
+          })),
+        },
+      };
+    },
+  );
+
+  /** Human names for the keys in the top lists: aliases, map names, run and replay context. */
+  async function labelKeys(rows: { kind: string; key: string }[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const ids = (kind: string) =>
+      rows.filter((r) => r.kind === kind && /^\d{1,10}$/.test(r.key)).map((r) => Number(r.key));
+    const userIds = ids('user');
+    if (userIds.length) {
+      const us = (await execRows(
+        db,
+        sql`select id, alias from users where id in ${userIds}`,
+      )) as unknown as { id: number; alias: string | null }[];
+      for (const u of us) if (u.alias) out.set(`user:${u.id}`, u.alias);
+    }
+    const mapIds = ids('map');
+    if (mapIds.length) {
+      const ms = (await execRows(
+        db,
+        sql`select id, name from maps where id in ${mapIds}`,
+      )) as unknown as { id: number; name: string }[];
+      for (const m of ms) out.set(`map:${m.id}`, m.name);
+    }
+    const runIds = ids('run');
+    if (runIds.length) {
+      const rs = (await execRows(
+        db,
+        sql`select r.id, m.name as map, coalesce(u.alias, r.observed_alias) as alias
+            from runs r left join maps m on m.id = r.map_id left join users u on u.id = r.user_id
+            where r.id in ${runIds}`,
+      )) as unknown as { id: number; map: string | null; alias: string | null }[];
+      for (const r of rs) out.set(`run:${r.id}`, `${r.alias ?? '?'} on ${r.map ?? '?'}`);
+    }
+    const shas = rows.filter((r) => r.kind === 'watch').map((r) => r.key);
+    if (shas.length) {
+      const ps = (await execRows(
+        db,
+        sql`select p.sha1, m.name as map, coalesce(u.alias, p.observed_alias) as alias
+            from replays p left join maps m on m.id = p.map_id left join users u on u.id = p.user_id
+            where p.sha1 in ${shas}`,
+      )) as unknown as { sha1: string; map: string | null; alias: string | null }[];
+      for (const p of ps) out.set(`watch:${p.sha1}`, `${p.alias ?? '?'} on ${p.map ?? '?'}`);
+    }
+    return out;
+  }
 
   // Poller: what every job is doing right now, and the levers to start, stop and queue work.
 

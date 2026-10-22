@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerMapRoutes } from './routes/maps.js';
 import { registerMiscRoutes } from './routes/misc.js';
+import { registerPageViewRoutes } from './routes/pv.js';
 import { registerReplayRoutes } from './routes/replays.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerSearchRoutes } from './routes/search.js';
@@ -212,6 +213,7 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
       await registerRunRoutes(api, deps);
       await registerReplayRoutes(api, deps);
       await registerSearchRoutes(api, deps);
+      await registerPageViewRoutes(api, deps);
       await registerAuthRoutes(api, deps, guard);
       await registerAdminRoutes(api, deps, guard);
     },

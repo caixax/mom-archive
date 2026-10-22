@@ -14,6 +14,7 @@ import {
 import { steamHistoryRefresh, steamRefresh } from './jobs/steam.js';
 import { housekeeping, searchRefresh, storageSummary } from './jobs/maintenance.js';
 import { runBackfill, type BackfillPhase } from './jobs/backfill.js';
+import { trafficRollup } from './jobs/traffic.js';
 
 const MIN = 60_000;
 const HOUR = 3600_000;
@@ -111,6 +112,12 @@ export function registerJobs(ctx: PollerContext): void {
     intervalMs: 24 * HOUR,
     initialDelayMs: 60 * MIN,
     run: () => housekeeping(ctx),
+  });
+  s.register({
+    name: 'traffic-rollup',
+    intervalMs: 15 * MIN,
+    initialDelayMs: 2 * MIN,
+    run: (signal, progress) => trafficRollup(ctx, signal, progress),
   });
   // The one time catch up, startable from the owner's panel. Resumable like the CLI one.
   s.register({

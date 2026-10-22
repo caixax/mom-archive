@@ -127,6 +127,17 @@
   archive observed: the data itself is always the tables and timelines below them.
 </p>
 
+<h2>What this site records about visitors</h2>
+<p>
+  No cookies, no accounts for reading, no third party scripts and no analytics service. The server
+  keeps a log of requests (address, country as Cloudflare reports it, path, browser string) for 30
+  days to spot abuse, and then deletes it. Opening a page sends one small request naming that page,
+  plus, on the first page of a visit, the site that linked here; browsers set to Do Not Track or
+  Global Privacy Control skip it. What is kept beyond the 30 days is only daily totals: how many
+  visitors and page views, which pages, countries, browsers and referring sites. No address or
+  browser string survives into those.
+</p>
+
 <h2>Contact</h2>
 <p>
   Questions, takedown requests or data corrections:

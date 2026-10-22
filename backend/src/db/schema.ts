@@ -4,6 +4,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  date,
   doublePrecision,
   index,
   integer,
@@ -753,6 +754,45 @@ export const requestLog = pgTable(
   ],
 );
 
+// Traffic rollups. One row per day and one row per (day, kind, key), computed by
+// the poller from request_log. No IPs and no user agents in here, so these are
+// kept for good while the raw log rolls over after REQUEST_LOG_DAYS.
+
+export const trafficDays = pgTable('traffic_days', {
+  day: date('day', { mode: 'string' }).primaryKey(),
+  requests: integer('requests').notNull().default(0),
+  humanRequests: integer('human_requests').notNull().default(0),
+  botRequests: integer('bot_requests').notNull().default(0),
+  /** Distinct client IPs that hit the API at all, bots included */
+  apiClients: integer('api_clients').notNull().default(0),
+  /** Distinct client IPs that loaded at least one page, bots excluded */
+  visitors: integer('visitors').notNull().default(0),
+  pageviews: integer('pageviews').notNull().default(0),
+  errors: integer('errors').notNull().default(0),
+  rateLimited: integer('rate_limited').notNull().default(0),
+  bytes: bigint('bytes', { mode: 'number' }).notNull().default(0),
+  avgMs: integer('avg_ms').notNull().default(0),
+  p95Ms: integer('p95_ms').notNull().default(0),
+  computedAt: ts('computed_at').notNull(),
+});
+
+export const trafficDayKeys = pgTable(
+  'traffic_day_keys',
+  {
+    day: date('day', { mode: 'string' }).notNull(),
+    /** page | user | map | run | watch | ledger | referrer | country | browser | os | device | search | route | status | bot */
+    kind: text('kind').notNull(),
+    key: text('key').notNull(),
+    n: integer('n').notNull(),
+    /** Distinct visitors behind n, that day */
+    uniq: integer('uniq').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.day, t.kind, t.key] }),
+    index('traffic_day_keys_kind_idx').on(t.kind, t.day),
+  ],
+);
+
 export const schemaTables = {
   adminSessions,
   announcements,
@@ -791,6 +831,8 @@ export const schemaTables = {
   refreshQueue,
   fetchFailures,
   kv,
+  trafficDays,
+  trafficDayKeys,
 };
 
 export const nowSql = sql`now()`;

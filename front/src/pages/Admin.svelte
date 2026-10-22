@@ -6,9 +6,18 @@
   import { formatBytes, formatDate, formatInt, relTime } from '../lib/format';
   import { loadSession, send, session, WriteError } from '../lib/session.svelte';
   import { route } from '../lib/router.svelte';
+  import Dashboard from '../admin/Dashboard.svelte';
 
-  type Tab = 'overview' | 'poller' | 'traffic' | 'announcements' | 'notices' | 'audit' | 'sessions';
-  let tab = $state<Tab>('overview');
+  type Tab =
+    | 'dashboard'
+    | 'overview'
+    | 'poller'
+    | 'traffic'
+    | 'announcements'
+    | 'notices'
+    | 'audit'
+    | 'sessions';
+  let tab = $state<Tab>('dashboard');
   let error = $state<string | null>(null);
   let note = $state<string | null>(null);
   let busy = $state(false);
@@ -609,8 +618,15 @@
     else if (t === 'sessions') void loadSessions();
   });
 
+  function openTab(t: Tab) {
+    tab = t;
+    error = null;
+    note = null;
+  }
+
   const tabs: [Tab, string][] = [
-    ['overview', 'Overview'],
+    ['dashboard', 'Dashboard'],
+    ['overview', 'Archive'],
     ['poller', 'Poller'],
     ['traffic', 'Traffic'],
     ['announcements', 'Announcements'],
@@ -656,6 +672,10 @@
 
   {#if error}<p class="error">{error}</p>{/if}
   {#if note}<p class="notice">{note}</p>{/if}
+
+  {#if tab === 'dashboard'}
+    <Dashboard go={(t) => openTab(t as Tab)} />
+  {/if}
 
   {#if tab === 'overview'}
     {#if stats}

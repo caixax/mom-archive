@@ -15,8 +15,35 @@ export const route = $state<RouteState>(read());
 
 function update(): void {
   const r = read();
+  const moved = r.path !== route.path;
   route.path = r.path;
   route.query = r.query;
+  if (moved) pageview(r.path);
+}
+
+let firstView = true;
+
+/**
+ * Tells the server a page was opened, so the owner's numbers count pages rather
+ * than API calls. No cookie, no id: just the path, and on the first page of a
+ * visit the site that linked here. Skipped for the panel and for browsers that
+ * ask not to be tracked.
+ */
+function pageview(path: string): void {
+  const nav = navigator as Navigator & { globalPrivacyControl?: boolean };
+  if (nav.doNotTrack === '1' || nav.globalPrivacyControl === true) return;
+  if (path === '/admin' || path.startsWith('/admin/')) return;
+  let url = `/api/pv${path === '/' ? '' : path}`;
+  if (firstView && document.referrer) {
+    try {
+      if (new URL(document.referrer).origin !== window.location.origin)
+        url += `?r=${encodeURIComponent(document.referrer.slice(0, 280))}`;
+    } catch {
+      // not a URL, nothing to report
+    }
+  }
+  firstView = false;
+  void fetch(url, { keepalive: true, credentials: 'omit' }).catch(() => undefined);
 }
 
 export function navigate(href: string, replace = false): void {
@@ -49,6 +76,7 @@ let installed = false;
 export function installRouter(): void {
   if (installed) return;
   installed = true;
+  pageview(route.path);
   window.addEventListener('popstate', update);
   document.addEventListener('click', (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
