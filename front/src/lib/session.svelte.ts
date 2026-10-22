@@ -52,7 +52,7 @@ export class WriteError extends Error {
 
 /** Sends a state changing request with the CSRF token this session was given. */
 export async function send<T>(
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {

@@ -20,6 +20,7 @@
 
   interface Detail {
     id: number;
+    privacy?: { bio: boolean; socials: boolean; avatars: boolean };
     steamId: string | null;
     steamId3: string | null;
     steamId2: string | null;
@@ -156,6 +157,17 @@
   {#each user.notices ?? [] as n (n.id)}
     <div class="notice-pin {n.level}" role="note">{n.body}</div>
   {/each}
+  {#if user.privacy && (user.privacy.bio || user.privacy.socials || user.privacy.avatars)}
+    <div class="notice-pin info" role="note">
+      At this player's request, their {[
+        user.privacy.bio ? 'bio' : '',
+        user.privacy.socials ? 'social links' : '',
+        user.privacy.avatars ? 'avatars' : '',
+      ]
+        .filter(Boolean)
+        .join(', ')} are not shown here.
+    </div>
+  {/if}
   {#each cases as c (c.id)}
     <div class="notice-pin warning" role="note">
       The Ledger has a {c.kind === 'case' ? 'case' : 'post'} about this player:
@@ -170,6 +182,7 @@
         {#each user.roleNames as r (r)}<span class="badge accent">{r}</span>{/each}
         {#each user.banNames as b (b)}<span class="badge err">ban: {b}</span>{/each}
         {#if user.isDeleted}<span class="badge err">no longer visible on Momentum</span>{/if}
+        <a class="small report-link" href={`/report?user=${user.id}`}>report</a>
       </h1>
       <dl class="kv">
         <dt>Momentum id</dt>

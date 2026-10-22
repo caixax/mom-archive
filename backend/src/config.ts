@@ -88,6 +88,13 @@ const schema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8760).default(720),
   /** Idle timeout: a session unused for this long is dead even inside its TTL. */
   SESSION_IDLE_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
+  /** Signed in players can file reports. Needs the admin panel configured. */
+  REPORTS_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? 'true').trim().toLowerCase() !== 'false'),
+  /** Maps a Momentum account must have completed to file an anonymous report. */
+  REPORTS_MIN_MAPS: z.coerce.number().int().min(0).max(10_000).default(10),
   REQUEST_LOG_ENABLED: z
     .string()
     .optional()
@@ -106,6 +113,8 @@ export type Config = z.infer<typeof schema> & {
   steamHistoryEnabled: boolean;
   /** True when the admin panel can work: an app role, a secret and at least one admin. */
   adminEnabled: boolean;
+  /** Reports exist only on top of a working panel, which answers them. */
+  reportsEnabled: boolean;
 };
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -136,6 +145,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     steamEnabled: c.STEAM_API_KEY.length > 0,
     steamHistoryEnabled: c.STEAMHISTORY_ENABLED && c.STEAMHISTORY_API_KEY.length > 0,
     adminEnabled,
+    reportsEnabled: adminEnabled && c.REPORTS_ENABLED,
   };
 }
 

@@ -8,12 +8,14 @@
   import { route } from '../lib/router.svelte';
   import Dashboard from '../admin/Dashboard.svelte';
   import LedgerAdmin from '../admin/LedgerAdmin.svelte';
+  import ReportsAdmin from '../admin/ReportsAdmin.svelte';
 
   type Tab =
     | 'dashboard'
     | 'overview'
     | 'poller'
     | 'ledger'
+    | 'reports'
     | 'traffic'
     | 'announcements'
     | 'notices'
@@ -649,6 +651,7 @@
     ['dashboard', 'Dashboard'],
     ['overview', 'Archive'],
     ['ledger', 'Ledger'],
+    ['reports', 'Reports'],
     ['poller', 'Poller'],
     ['traffic', 'Traffic'],
     ['announcements', 'Announcements'],
@@ -702,6 +705,12 @@
   {#if tab === 'ledger'}
     <LedgerAdmin
       openId={ledgerOpenId}
+      onmessage={(kind, text) => (kind === 'ok' ? done(text) : fail(new Error(text)))}
+    />
+  {/if}
+
+  {#if tab === 'reports'}
+    <ReportsAdmin
       onmessage={(kind, text) => (kind === 'ok' ? done(text) : fail(new Error(text)))}
     />
   {/if}

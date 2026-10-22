@@ -37,4 +37,6 @@ export interface HttpDeps {
   control?: PollerControl | null;
   schemaVersion: number;
   log: Logger;
+  /** Steam OpenID verification transport; tests pass a fake. */
+  openidFetch?: typeof fetch;
 }

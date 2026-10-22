@@ -138,13 +138,35 @@
 
 <h2>What this site records about visitors</h2>
 <p>
-  No cookies, no accounts for reading, no third party scripts and no analytics service. The server
-  keeps a log of requests (address, country as Cloudflare reports it, path, browser string) for 30
-  days to spot abuse, and then deletes it. Opening a page sends one small request naming that page,
-  plus, on the first page of a visit, the site that linked here; browsers set to Do Not Track or
-  Global Privacy Control skip it. What is kept beyond the 30 days is only daily totals: how many
-  visitors and page views, which pages, countries, browsers and referring sites. No address or
-  browser string survives into those.
+  No cookies and no accounts for reading, no third party scripts and no analytics service. A cookie
+  is set only for players who sign in to send a report. The server keeps a log of requests (address,
+  country as Cloudflare reports it, path, browser string) for 30 days to spot abuse, and then
+  deletes it. Opening a page sends one small request naming that page, plus, on the first page of a
+  visit, the site that linked here; browsers set to Do Not Track or Global Privacy Control skip it.
+  What is kept beyond the 30 days is only daily totals: how many visitors and page views, which
+  pages, countries, browsers and referring sites. No address or browser string survives into those.
+</p>
+
+<h2>Reports and privacy requests</h2>
+<p>
+  Players can <a href="/report">send a report</a> after signing in with Steam: suspected cheating, something
+  wrong in the archive, their side of a case about them, or a request to hide parts of their profile.
+  Reports are private and are answered here, signed Admin.
+</p>
+<p>
+  Most reports are anonymous to the person who runs this site: they see a code that stays the same
+  for one account, so spam can be blocked, and not the account itself. The code is a keyed hash of
+  the SteamID. While a player is signed in (30 days at most) the SteamID is also kept, encrypted, so
+  the site can check who may report. Sign in and report requests are not logged, by the site or by
+  its web server. The one honest limit: whoever runs the server holds the key, so with effort they
+  could check whether a given account is behind a code. The site is built so that it never does, but
+  that is a promise, not a guarantee mathematics gives you. Cloudflare, which sits in front of the
+  site, sees requests the way any CDN does.
+</p>
+<p>
+  Privacy requests: on request, a player's bio, social links and avatars stop being shown anywhere
+  on the site. Runs, bans, records and cases are history of a public game and stay. The request has
+  to come from the account itself, through the signed "hide parts of my profile" report.
 </p>
 
 <h2>Contact</h2>

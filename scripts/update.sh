@@ -20,8 +20,20 @@ sudo rsync -a --delete front/dist/ "$WEB_ROOT"/
 
 if ! sudo cmp -s deploy/nginx.momarchive.conf "$NGINX_CONF"; then
   echo "nginx config changed, installing and reloading"
+  # Keep the working config until the new one passes nginx -t, so a bad file is
+  # never left in place for the next restart to trip over.
+  backup=$(mktemp)
+  [ -f "$NGINX_CONF" ] && sudo cp "$NGINX_CONF" "$backup"
   sudo cp deploy/nginx.momarchive.conf "$NGINX_CONF"
-  sudo nginx -t && sudo systemctl reload nginx
+  if sudo nginx -t; then
+    sudo systemctl reload nginx
+  else
+    echo "nginx -t failed, putting the previous config back" >&2
+    [ -s "$backup" ] && sudo cp "$backup" "$NGINX_CONF"
+    rm -f "$backup"
+    exit 1
+  fi
+  rm -f "$backup"
 fi
 
 pnpm pm2:reload

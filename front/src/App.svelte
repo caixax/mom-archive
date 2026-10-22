@@ -17,8 +17,10 @@
   import LedgerPost from './pages/LedgerPost.svelte';
   import NotFound from './pages/NotFound.svelte';
   import Banners from './components/Banners.svelte';
+  import { loadMember, member } from './lib/member.svelte';
 
   installRouter();
+  void loadMember();
 
   let q = $state('');
 
@@ -46,10 +48,23 @@
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type Page = { c: Component<any>; params: Record<string, string> };
+  type AnyComponent = Component<any>;
+  type Page = {
+    c: AnyComponent | null;
+    lazy?: () => Promise<AnyComponent>;
+    params: Record<string, string>;
+  };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let adminPromise: Promise<Component<any>> | null = null;
+  // The report pages carry the Markdown renderer; readers who never report never load them.
+  const lazyPages: Record<string, Promise<AnyComponent>> = {};
+  function lazy(name: string, load: () => Promise<{ default: AnyComponent }>) {
+    return () => (lazyPages[name] ??= load().then((m) => m.default));
+  }
+  const ReportPage = lazy('report', () => import('./pages/Report.svelte'));
+  const ReportsPage = lazy('reports', () => import('./pages/Reports.svelte'));
+  const ThreadPage = lazy('thread', () => import('./pages/ReportThread.svelte'));
+
+  let adminPromise: Promise<AnyComponent> | null = null;
   function loadAdmin() {
     adminPromise ??= import('./pages/Admin.svelte').then((m) => m.default);
     return adminPromise;
@@ -70,6 +85,9 @@
     if (p === '/status') return { c: Status, params: {} };
     if (p === '/search') return { c: Search, params: {} };
     if (p === '/ledger') return { c: Ledger, params: {} };
+    if (p === '/report') return { c: null, lazy: ReportPage, params: {} };
+    if (p === '/reports') return { c: null, lazy: ReportsPage, params: {} };
+    if ((m = match('/reports/:id', p))) return { c: null, lazy: ThreadPage, params: m };
     if ((m = match('/ledger/:slug', p))) return { c: LedgerPost, params: m };
     return { c: NotFound, params: {} };
   });
@@ -81,6 +99,11 @@
     {#each links as [href, label] (href)}
       <a {href} class:active={isActive(href)}>{label}</a>
     {/each}
+    {#if member.authenticated}
+      <a href="/reports" class:active={isActive('/reports')}
+        >Reports{#if member.unread}<span class="badge accent">{member.unread}</span>{/if}</a
+      >
+    {/if}
   </nav>
   <form onsubmit={submit} role="search">
     <input
@@ -107,7 +130,17 @@
   {:else}
     <Banners home={route.path === '/'} />
     {#key route.path}
-      <page.c {...page.params} />
+      {#if page.c}
+        <page.c {...page.params} />
+      {:else if page.lazy}
+        {#await page.lazy()}
+          <p class="muted">Loading.</p>
+        {:then Lazy}
+          <Lazy {...page.params} />
+        {:catch}
+          <p class="error">This page could not be loaded.</p>
+        {/await}
+      {/if}
     {/key}
   {/if}
 </main>
@@ -116,4 +149,5 @@
   mom-archive is an independent, read only mirror of public Momentum Mod data. Not affiliated with
   Momentum Mod.
   <a href="/api/openapi.json" rel="external">JSON API</a>
+  <a href="/report" class="footer-link">Report something</a>
 </footer>

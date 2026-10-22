@@ -216,6 +216,23 @@ export async function registerReplayRoutes(app: FastifyInstance, deps: HttpDeps)
       )) as unknown as { s3_key: string; content_type: string | null }[];
       const a = rows[0];
       if (!a) return reply.code(404).send({ error: 'not_found', statusCode: 404 });
+      // An avatar of a player who asked for theirs to be hidden is not served, on any page.
+      const hidden = (await execRows(
+        db,
+        sql`select 1 from privacy_hides p join users u on u.id = p.user_id
+            where p.hide_avatars and (
+              u.avatar_hash = ${req.params.hash}
+              or exists (select 1 from steam_avatar_history s
+                         where s.steam_id = u.steam_id and s.avatar_hash = ${req.params.hash})
+              or exists (select 1 from user_field_changes c
+                         where c.user_id = u.id and c.field = 'avatar'
+                           and (c.old_value = ${req.params.hash} or c.new_value = ${req.params.hash})))
+            limit 1`,
+      )) as unknown as unknown[];
+      if (hidden.length) {
+        reply.header('cache-control', 'no-store');
+        return reply.code(404).send({ error: 'not_found', statusCode: 404 });
+      }
       const obj = await deps.storage.getStream(a.s3_key);
       if (!obj) return reply.code(404).send({ error: 'not_found', statusCode: 404 });
       reply.header(

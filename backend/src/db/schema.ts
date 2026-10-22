@@ -841,6 +841,95 @@ export const ledgerRevisions = pgTable(
   (t) => [index('ledger_revisions_post_idx').on(t.postId, t.validTo)],
 );
 
+// Reports from signed in players. A reporter is a pseudonym (member_key, an HMAC
+// of the SteamID): the owner can see a stable code and block it, not a person.
+
+export const members = pgTable('members', {
+  memberKey: text('member_key').primaryKey(),
+  firstSeenAt: ts('first_seen_at').notNull(),
+  lastSeenAt: ts('last_seen_at').notNull(),
+  blockedAt: ts('blocked_at'),
+  blockedNote: text('blocked_note'),
+  reportsTotal: integer('reports_total').notNull().default(0),
+});
+
+/** Like admin_sessions, but with no IP, no user agent and the SteamID encrypted. */
+export const memberSessions = pgTable(
+  'member_sessions',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    memberKey: text('member_key').notNull(),
+    steamIdEnc: text('steam_id_enc').notNull(),
+    createdAt: ts('created_at').notNull(),
+    lastSeenAt: ts('last_seen_at').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+    revokedAt: ts('revoked_at'),
+  },
+  (t) => [
+    uniqueIndex('member_sessions_token_idx').on(t.tokenHash),
+    index('member_sessions_member_idx').on(t.memberKey),
+  ],
+);
+
+export const reports = pgTable(
+  'reports',
+  {
+    id: serial('id').primaryKey(),
+    /** Unguessable id used in URLs; the serial id never leaves the panel */
+    publicId: text('public_id').notNull(),
+    memberKey: text('member_key').notNull(),
+    /** cheating | data_error | other | about_me | privacy */
+    category: text('category').notNull(),
+    /** user | run | map, or null */
+    subjectKind: text('subject_kind'),
+    subjectId: text('subject_id'),
+    title: text('title').notNull(),
+    /** open | answered | closed */
+    status: text('status').notNull().default('open'),
+    /** True when the reporter chose to sign it; only then is the SteamID stored */
+    identified: boolean('identified').notNull().default(false),
+    reporterSteamId: text('reporter_steam_id'),
+    createdAt: ts('created_at').notNull(),
+    updatedAt: ts('updated_at').notNull(),
+    lastMessageAt: ts('last_message_at').notNull(),
+    lastMemberMessageAt: ts('last_member_message_at'),
+    lastAdminMessageAt: ts('last_admin_message_at'),
+    memberSeenAt: ts('member_seen_at'),
+    adminSeenAt: ts('admin_seen_at'),
+  },
+  (t) => [
+    uniqueIndex('reports_public_idx').on(t.publicId),
+    index('reports_member_idx').on(t.memberKey, t.createdAt),
+    index('reports_status_idx').on(t.status, t.lastMessageAt),
+  ],
+);
+
+export const reportMessages = pgTable(
+  'report_messages',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    reportId: integer('report_id').notNull(),
+    /** member | admin. The admin side is never more specific than that. */
+    author: text('author').notNull(),
+    body: text('body').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('report_messages_report_idx').on(t.reportId, t.createdAt)],
+);
+
+/** Parts of a profile hidden at the player's request. The archive keeps the data. */
+export const privacyHides = pgTable('privacy_hides', {
+  userId: integer('user_id').primaryKey(),
+  hideBio: boolean('hide_bio').notNull().default(false),
+  hideSocials: boolean('hide_socials').notNull().default(false),
+  hideAvatars: boolean('hide_avatars').notNull().default(false),
+  note: text('note'),
+  reportId: integer('report_id'),
+  createdAt: ts('created_at').notNull(),
+  updatedAt: ts('updated_at').notNull(),
+});
+
 export const schemaTables = {
   adminSessions,
   announcements,
@@ -883,6 +972,11 @@ export const schemaTables = {
   trafficDayKeys,
   ledgerPosts,
   ledgerRevisions,
+  members,
+  memberSessions,
+  reports,
+  reportMessages,
+  privacyHides,
 };
 
 export const nowSql = sql`now()`;

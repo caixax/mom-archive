@@ -384,3 +384,13 @@ footer {
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;
 }
+
+.report-link {
+  font-weight: normal;
+  margin-left: 0.6rem;
+  color: var(--muted);
+}
+
+.footer-link {
+  margin-left: 0.8rem;
+}

@@ -12,9 +12,14 @@ import { BanName, flagNames } from '../../momentum/enums.js';
 import type { Guard } from '../auth/guard.js';
 import { AnyObject, toIso } from '../common.js';
 import type { HttpDeps } from '../deps.js';
-import { LEDGER_KINDS, SLUG } from './ledger.js';
+import { SLUG } from './ledger.js';
 
-const Kind = Type.Union(LEDGER_KINDS.map((k) => Type.Literal(k)));
+const Kind = Type.Union([
+  Type.Literal('case'),
+  Type.Literal('news'),
+  Type.Literal('concern'),
+  Type.Literal('changelog'),
+]);
 const IdParam = Type.Object({ id: Type.Integer({ minimum: 1, maximum: 2_147_483_647 }) });
 const Fields = {
   kind: Kind,

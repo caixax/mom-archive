@@ -14,9 +14,11 @@ import type { HttpDeps } from './deps.js';
 import { normalizePath, RequestLogger } from './request-log.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAdminLedgerRoutes } from './routes/admin-ledger.js';
+import { registerAdminReportRoutes } from './routes/admin-reports.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerLedgerRoutes } from './routes/ledger.js';
 import { registerMapRoutes } from './routes/maps.js';
+import { registerMemberRoutes } from './routes/member.js';
 import { registerMiscRoutes } from './routes/misc.js';
 import { registerPageViewRoutes } from './routes/pv.js';
 import { registerReplayRoutes } from './routes/replays.js';
@@ -29,7 +31,8 @@ export type App = FastifyInstance;
 /** Paths that accept more than GET and HEAD, and the methods each one takes. */
 const WRITABLE: { prefix: string; methods: readonly string[] }[] = [
   { prefix: '/api/auth/', methods: ['GET', 'HEAD', 'POST'] },
-  { prefix: '/api/admin/', methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'] },
+  { prefix: '/api/admin/', methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'] },
+  { prefix: '/api/member/', methods: ['GET', 'HEAD', 'POST'] },
 ];
 
 function allowedMethods(url: string): readonly string[] {
@@ -98,7 +101,8 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
 
   await app.register(etag, { weak: true });
 
-  // Cookies are only ever used by the owner's session; nothing is set for visitors.
+  // Cookies are only ever used by the owner's session and by players who sign in
+  // to send a report; nothing is set for anyone just reading.
   await app.register(cookie, {});
 
   await app.register(swagger, {
@@ -143,6 +147,9 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
       : null;
   if (requestLogger) {
     app.addHook('onResponse', async (req, reply) => {
+      // Reporters' requests are never logged: an address and a time next to a
+      // report would undo the pseudonym.
+      if (req.url.startsWith('/api/member/')) return;
       const started = (req as { startedAt?: number }).startedAt ?? Date.now();
       const [path, query] = req.url.split('?');
       const country = req.headers['cf-ipcountry'];
@@ -220,6 +227,8 @@ export async function buildApp(deps: HttpDeps): Promise<App> {
       await registerAuthRoutes(api, deps, guard);
       await registerAdminRoutes(api, deps, guard);
       await registerAdminLedgerRoutes(api, deps, guard);
+      await registerAdminReportRoutes(api, deps, guard);
+      await registerMemberRoutes(api, deps);
     },
     { prefix: '/api' },
   );

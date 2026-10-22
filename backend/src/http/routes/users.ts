@@ -256,18 +256,40 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
       `,
       )) as unknown as Record<string, unknown>[];
 
+      // Parts the player asked to hide. The archive keeps them; the API does not serve them.
+      const [hide] = (await execRows(
+        db,
+        sql`select hide_bio, hide_socials, hide_avatars from privacy_hides where user_id = ${id}`,
+      )) as unknown as { hide_bio: boolean; hide_socials: boolean; hide_avatars: boolean }[];
+      const hidden = {
+        bio: Boolean(hide?.hide_bio),
+        socials: Boolean(hide?.hide_socials),
+        avatars: Boolean(hide?.hide_avatars),
+      };
+      const hiddenField = (field: string) =>
+        (hidden.bio && field === 'bio') ||
+        (hidden.socials && (field === 'socials' || field.startsWith('social:'))) ||
+        (hidden.avatars &&
+          (field === 'avatar' || field === 'avatar_hidden' || field === 'avatarhash'));
+
       // Notes the archive owner pinned to this profile. Plain text, rendered as text.
       const notices = (await execRows(
         db,
         sql`select id, body, level from user_notices where user_id = ${id} and active = true order by id desc limit 10`,
       )) as unknown as Record<string, unknown>[];
 
+      const summary = userSummary(u);
+      if (hidden.avatars) {
+        summary.avatarHash = null;
+        summary.avatarUrl = null;
+      }
       return {
-        ...userSummary(u),
+        ...summary,
         steamId3: steamId ? steamId64ToSteam3(steamId) : null,
         steamId2: steamId ? steamId64ToSteam2(steamId) : null,
-        bio: u.bio,
-        socials: u.socials ?? {},
+        bio: hidden.bio ? null : u.bio,
+        socials: hidden.socials ? {} : (u.socials ?? {}),
+        privacy: hidden,
         stats: {
           cosXp: u.cosXp,
           level: u.level,
@@ -285,8 +307,9 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
         steam: steam
           ? {
               personaName: steam.persona_name,
-              avatarHash: steam.avatar_hash,
-              avatarUrl: steam.avatar_hash ? `/api/avatars/${steam.avatar_hash}` : null,
+              avatarHash: hidden.avatars ? null : steam.avatar_hash,
+              avatarUrl:
+                steam.avatar_hash && !hidden.avatars ? `/api/avatars/${steam.avatar_hash}` : null,
               profileUrl: steam.profile_url,
               profileState: steam.profile_state,
               communityVisibilityState: steam.community_visibility_state,
@@ -303,20 +326,22 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
             }
           : null,
         counts,
-        history: history.map((h) => ({
-          source: h.source,
-          field: h.field,
-          oldValue: h.old_value,
-          newValue: h.new_value,
-          observedAt: toIso(h.observed_at),
-        })),
+        history: history
+          .filter((h) => !hiddenField(h.field.toLowerCase()))
+          .map((h) => ({
+            source: h.source,
+            field: h.field,
+            oldValue: h.old_value,
+            newValue: h.new_value,
+            observedAt: toIso(h.observed_at),
+          })),
         aliases: aliases.map((a) => ({
           name: a.name,
           source: a.source,
           firstSeen: toIso(a.first_seen),
           lastSeen: toIso(a.last_seen),
         })),
-        avatars: avatarsRows.map((a) => ({
+        avatars: (hidden.avatars ? [] : avatarsRows).map((a) => ({
           hash: a.avatar_hash,
           source: a.source,
           firstSeen: toIso(a.first_seen),

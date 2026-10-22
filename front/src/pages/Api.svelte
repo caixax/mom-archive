@@ -144,9 +144,9 @@
 <h2>Basics</h2>
 <ul>
   <li>
-    <strong>No key, no account:</strong> there is nothing to sign up for and nothing to authenticate.
-    The only routes that are not public belong to the archive owner's own panel, and they are left out
-    of the spec above.
+    <strong>No key, no account:</strong> reading needs nothing at all. The routes that are not public
+    are the archive owner's own panel and the sign in players use to send a report, and both are left
+    out of the spec above.
   </li>
   <li>
     <strong>Rate limit:</strong> 240 requests per minute per IP. Going over returns

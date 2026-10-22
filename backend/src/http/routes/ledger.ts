@@ -14,7 +14,12 @@ export const LEDGER_KINDS = ['case', 'news', 'concern', 'changelog'] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 export const SLUG = '^[a-z0-9]+(?:-[a-z0-9]+)*$';
 
-const Kind = Type.Union(LEDGER_KINDS.map((k) => Type.Literal(k)));
+const Kind = Type.Union([
+  Type.Literal('case'),
+  Type.Literal('news'),
+  Type.Literal('concern'),
+  Type.Literal('changelog'),
+]);
 const Slug = Type.String({ pattern: SLUG, maxLength: 80 });
 
 /** Visible to the public: published, and its publication time has come. */

@@ -86,6 +86,7 @@
     {#if run.removedAt}<span class="badge removed"
         >{run.removalKind === 'deleted' ? 'deleted upstream' : 'removed from leaderboard'}</span
       >{/if}
+    <a class="small report-link" href={`/report?run=${run.id}`}>report</a>
   </h1>
   <dl class="kv">
     <dt>Player</dt>

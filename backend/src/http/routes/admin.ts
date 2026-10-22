@@ -13,7 +13,7 @@ import type { HttpDeps } from '../deps.js';
 import type { Guard } from '../auth/guard.js';
 import { revokeSession } from '../auth/sessions.js';
 import { BanName, flagNames } from '../../momentum/enums.js';
-import { REFRESH_KINDS, validRefreshKey } from '../../poller/control.js';
+import { validRefreshKey } from '../../poller/control.js';
 import { BOT_UA } from '../../poller/jobs/traffic.js';
 
 const Level = Type.Union([Type.Literal('info'), Type.Literal('warning'), Type.Literal('critical')]);
@@ -22,9 +22,13 @@ const Body = Type.String({ minLength: 1, maxLength: 2000 });
 const IdParam = Type.Object({ id: Type.Integer({ minimum: 1, maximum: 2_147_483_647 }) });
 const Hours = Type.Integer({ minimum: 1, maximum: 24 * 90, default: 24 });
 const JobName = Type.String({ pattern: '^[a-z][a-z-]{0,39}$' });
-const Phase = Type.Union(
-  ['runs', 'users', 'maps', 'leaderboards', 'beta-runs'].map((p) => Type.Literal(p)),
-);
+const Phase = Type.Union([
+  Type.Literal('runs'),
+  Type.Literal('users'),
+  Type.Literal('maps'),
+  Type.Literal('leaderboards'),
+  Type.Literal('beta-runs'),
+]);
 const startedAt = new Date();
 
 export async function registerAdminRoutes(
@@ -693,6 +697,16 @@ export async function registerAdminRoutes(
         )
         .map((j) => ({ name: j.name, error: j.lastError, at: toIso(j.lastFinishAt) }));
 
+      // Reports live behind the app role; the read only role cannot see them.
+      const [unreadReports] = deps.dbApp
+        ? ((await execRows(
+            write,
+            sql`select count(*)::int as n from reports
+                where last_member_message_at is not null
+                  and (admin_seen_at is null or admin_seen_at < last_member_message_at)`,
+          )) as unknown as { n: number }[])
+        : [];
+
       return {
         days,
         rollup: {
@@ -736,6 +750,7 @@ export async function registerAdminRoutes(
         })),
         attention: {
           failingJobs: failing,
+          unreadReports: unreadReports?.n ?? 0,
           replaysLost7d: Number(lost?.lost_7d ?? 0),
           replaysLostNot404: Number(lost?.lost_not_404 ?? 0),
           bans: bans.map((b) => ({
@@ -1080,7 +1095,14 @@ export async function registerAdminRoutes(
         hide: true,
         body: Type.Object(
           {
-            kind: Type.Union(REFRESH_KINDS.map((k) => Type.Literal(k))),
+            kind: Type.Union([
+              Type.Literal('user'),
+              Type.Literal('map'),
+              Type.Literal('leaderboard'),
+              Type.Literal('follows'),
+              Type.Literal('activities'),
+              Type.Literal('run-verify'),
+            ]),
             key: Type.String({ minLength: 1, maxLength: 40 }),
           },
           { additionalProperties: false },

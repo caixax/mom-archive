@@ -57,7 +57,7 @@ export async function storageSummary(ctx: PollerContext): Promise<JobResult> {
 /**
  * Removes refresh items that keep failing, poll_log rows older than 90 days,
  * request log rows past their retention (they hold IPs, so the window is short
- * on purpose) and admin sessions that died long ago.
+ * on purpose), admin sessions that died long ago and dead player sessions.
  */
 export async function housekeeping(ctx: PollerContext): Promise<JobResult> {
   const a = (await execRows(
@@ -76,8 +76,13 @@ export async function housekeeping(ctx: PollerContext): Promise<JobResult> {
     ctx.db,
     sql`delete from admin_sessions where expires_at < now() - interval '30 days' returning id`,
   )) as unknown as unknown[];
+  // Player sessions carry an encrypted SteamID; they go as soon as they are dead.
+  const e = (await execRows(
+    ctx.db,
+    sql`delete from member_sessions where expires_at < now() or revoked_at is not null returning id`,
+  )) as unknown as unknown[];
   return {
-    seen: a.length + b.length + c.length + d.length,
-    note: `poll_log=${a.length} refresh=${b.length} requests=${c.length} sessions=${d.length}`,
+    seen: a.length + b.length + c.length + d.length + e.length,
+    note: `poll_log=${a.length} refresh=${b.length} requests=${c.length} sessions=${d.length} member_sessions=${e.length}`,
   };
 }
