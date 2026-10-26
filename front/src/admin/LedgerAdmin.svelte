@@ -5,7 +5,8 @@
   import { api } from '../lib/api';
   import { formatDate, relTime } from '../lib/format';
   import { KIND_LABEL, type LedgerKind } from '../lib/ledger';
-  import { prefixLines, wrapSelection } from '../lib/markdown';
+  import { confirmDialog, promptDialog } from '../lib/dialog.svelte';
+  import { prefixLines, safeHref, wrapSelection } from '../lib/markdown';
   import { send } from '../lib/session.svelte';
   import Markdown from '../components/md/Markdown.svelte';
 
@@ -92,8 +93,21 @@
     }
   }
 
+  /** Asks before throwing away unsaved edits; true when it is fine to go on. */
+  async function leaveOk(): Promise<boolean> {
+    if (!dirty) return true;
+    return confirmDialog({
+      title: 'Discard your changes?',
+      message: `"${post?.title ?? ''}" has edits that are not saved.`,
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep editing',
+      danger: true,
+    });
+  }
+
   async function open(id: number) {
-    if (dirty && !confirm('Discard the unsaved changes to this post?')) return;
+    if (post?.id === id) return;
+    if (!(await leaveOk())) return;
     try {
       const p = (await api<{ data: Post }>(`/api/admin/ledger/${id}`)).data;
       post = p;
@@ -120,9 +134,15 @@
   });
 
   async function create() {
-    if (dirty && !confirm('Discard the unsaved changes to this post?')) return;
-    const title = prompt('Title of the new post');
-    if (!title?.trim()) return;
+    if (!(await leaveOk())) return;
+    const title = await promptDialog({
+      title: 'New post',
+      message: `A ${KIND_LABEL[newKind].toLowerCase()} draft that only you can see until you publish it.`,
+      label: 'Title',
+      maxlength: 200,
+      confirmLabel: 'Create draft',
+    });
+    if (!title) return;
     busy = true;
     try {
       const r = await send<{ data: Post }>('POST', '/api/admin/ledger', {
@@ -182,24 +202,39 @@
   async function publish() {
     if (!post) return;
     const when = schedule ? new Date(schedule) : null;
-    const msg = when
-      ? `Publish "${post.title}" on ${formatDate(when.toISOString())}?`
-      : `Publish "${post.title}" now? It becomes public at /ledger/${post.slug}.`;
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: when ? 'Schedule this post?' : 'Publish this post?',
+      message: when
+        ? `"${post.title}" goes public on ${formatDate(when.toISOString())} at /ledger/${post.slug}.`
+        : `"${post.title}" becomes public now at /ledger/${post.slug}. After that its address is fixed, and edits keep the earlier text readable.`,
+      confirmLabel: when ? 'Schedule' : 'Publish',
+    });
+    if (!ok) return;
     await save({ status: 'published', ...(when ? { publishedAt: when.toISOString() } : {}) });
   }
 
   async function unpublish() {
     if (!post) return;
-    if (!confirm('Take this post down? Its address stops working until it is published again.'))
-      return;
+    const ok = await confirmDialog({
+      title: 'Take this post down?',
+      message: 'Its address stops working until it is published again.',
+      confirmLabel: 'Unpublish',
+      danger: true,
+    });
+    if (!ok) return;
     await save({ status: 'draft' });
   }
 
   async function remove() {
     if (!post) return;
     const word = post.status === 'published' ? 'published post and its revisions' : 'draft';
-    if (!confirm(`Delete this ${word} for good?`)) return;
+    const ok = await confirmDialog({
+      title: `Delete this ${word}?`,
+      message: `"${post.title}" is removed for good. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     busy = true;
     try {
       await send('DELETE', `/api/admin/ledger/${post.id}`);
@@ -247,11 +282,17 @@
       el.setSelectionRange(a + text.length, a + text.length);
     });
   }
-  function link() {
-    const url = prompt('Link to (https://..., or a path on this site like /users/14991)');
-    if (url) wrap('[', `](${url.trim()})`, 'link text');
+  async function link() {
+    const url = await promptDialog({
+      title: 'Insert a link',
+      label: 'Address',
+      placeholder: 'https://... or a path here, like /users/14991',
+      confirmLabel: 'Insert',
+      validate: (v) => (safeHref(v) ? null : 'Use https://, mailto: or a path starting with /.'),
+    });
+    if (url) wrap('[', `](${url})`, 'link text');
   }
-  function ref(kind: 'user' | 'map' | 'run' | 'replay') {
+  async function ref(kind: 'user' | 'map' | 'run' | 'replay') {
     const hint =
       kind === 'user'
         ? 'Momentum user id'
@@ -260,8 +301,20 @@
           : kind === 'run'
             ? 'run id'
             : 'replay sha1';
-    const id = prompt(`Reference a ${kind}: ${hint}`);
-    if (id?.trim()) insert(`[[${kind}:${id.trim()}]]`);
+    const pattern =
+      kind === 'replay'
+        ? /^[0-9a-f]{40}$/
+        : kind === 'map'
+          ? /^[A-Za-z0-9_.-]{1,80}$/
+          : /^\d{1,12}$/;
+    const id = await promptDialog({
+      title: `Reference a ${kind}`,
+      message: 'It shows as a live link with what the archive knows about it.',
+      label: hint,
+      confirmLabel: 'Insert',
+      validate: (v) => (pattern.test(v) ? null : `That does not look like a ${hint}.`),
+    });
+    if (id) insert(`[[${kind}:${id}]]`);
   }
   function table() {
     insert('\n| Column | Column |\n| --- | --- |\n| value | value |\n');

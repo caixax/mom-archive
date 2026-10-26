@@ -1,7 +1,8 @@
 <script lang="ts">
   // A small Markdown box with a few formatting buttons and a preview, for report
   // messages. Images are off: text written by players never loads anything.
-  import { prefixLines, wrapSelection } from '../../lib/markdown';
+  import { promptDialog } from '../../lib/dialog.svelte';
+  import { prefixLines, safeHref, wrapSelection } from '../../lib/markdown';
   import Markdown from './Markdown.svelte';
 
   interface Props {
@@ -29,9 +30,15 @@
   function lines(p: string) {
     if (el) value = prefixLines(el, p);
   }
-  function link() {
-    const url = prompt('Link to (https://..., or a path here like /runs/123)');
-    if (url) wrap('[', `](${url.trim()})`, 'link text');
+  async function link() {
+    const url = await promptDialog({
+      title: 'Insert a link',
+      label: 'Address',
+      placeholder: 'https://... or a path here, like /runs/123',
+      confirmLabel: 'Insert',
+      validate: (v) => (safeHref(v) ? null : 'Use https://, mailto: or a path starting with /.'),
+    });
+    if (url) wrap('[', `](${url})`, 'link text');
   }
   function keys(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey)) return;

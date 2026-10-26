@@ -17,6 +17,7 @@
   import LedgerPost from './pages/LedgerPost.svelte';
   import NotFound from './pages/NotFound.svelte';
   import Banners from './components/Banners.svelte';
+  import Dialogs from './components/Dialogs.svelte';
   import { loadMember, member } from './lib/member.svelte';
 
   installRouter();
@@ -144,6 +145,8 @@
     {/key}
   {/if}
 </main>
+
+<Dialogs />
 
 <footer>
   mom-archive is an independent, read only mirror of public Momentum Mod data. Not affiliated with

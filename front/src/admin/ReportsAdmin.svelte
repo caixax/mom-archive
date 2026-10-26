@@ -5,6 +5,7 @@
   import { api } from '../lib/api';
   import { formatDate, relTime } from '../lib/format';
   import { CATEGORY_INFO } from '../lib/member.svelte';
+  import { confirmDialog, promptDialog } from '../lib/dialog.svelte';
   import { send } from '../lib/session.svelte';
   import Markdown from '../components/md/Markdown.svelte';
   import MiniEditor from '../components/md/MiniEditor.svelte';
@@ -141,8 +142,17 @@
 
   async function block(on: boolean) {
     if (!thread) return;
-    const note = on ? prompt('Why (kept with the block, for you only)?', 'spam') : null;
-    if (on && note === null) return;
+    let note: string | null = null;
+    if (on) {
+      note = await promptDialog({
+        title: `Block reporter ${thread.reporter.code}?`,
+        message: 'They can still sign in, but cannot send reports or messages. You can undo it.',
+        label: 'Why, kept with the block and seen only by you',
+        value: 'spam',
+        confirmLabel: 'Block',
+      });
+      if (note === null) return;
+    }
     busy = true;
     try {
       await send('POST', `/api/admin/members/${thread.reporter.key}/block`, {
@@ -177,7 +187,12 @@
   }
 
   async function clearHide(h: Hide) {
-    if (!confirm(`Show ${h.alias ?? h.userId}'s profile in full again?`)) return;
+    const ok = await confirmDialog({
+      title: 'Show this profile in full again?',
+      message: `${h.alias ?? `user ${h.userId}`}'s hidden bio, social links or avatars become visible again.`,
+      confirmLabel: 'Show again',
+    });
+    if (!ok) return;
     busy = true;
     try {
       await send('PUT', `/api/admin/privacy/${h.userId}`, {

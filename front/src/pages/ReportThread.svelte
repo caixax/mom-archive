@@ -1,6 +1,7 @@
 <script lang="ts">
   // One report and its conversation with the archive owner, who signs as Admin.
   import { api } from '../lib/api';
+  import { confirmDialog } from '../lib/dialog.svelte';
   import { formatDate } from '../lib/format';
   import { CATEGORY_INFO, loadMember, loginHref, member, memberSend } from '../lib/member.svelte';
   import Markdown from '../components/md/Markdown.svelte';
@@ -55,7 +56,12 @@
   }
 
   async function close() {
-    if (!confirm('Close this report? You will not be able to add to it.')) return;
+    const ok = await confirmDialog({
+      title: 'Close this report?',
+      message: 'You will not be able to add to it. You can always send a new one.',
+      confirmLabel: 'Close report',
+    });
+    if (!ok) return;
     busy = true;
     try {
       await memberSend(`/api/member/reports/${encodeURIComponent(id)}/close`);

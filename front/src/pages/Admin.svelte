@@ -5,6 +5,7 @@
   import { api } from '../lib/api';
   import { formatBytes, formatDate, formatInt, relTime } from '../lib/format';
   import { loadSession, send, session, WriteError } from '../lib/session.svelte';
+  import { confirmDialog, toast } from '../lib/dialog.svelte';
   import { route } from '../lib/router.svelte';
   import Dashboard from '../admin/Dashboard.svelte';
   import LedgerAdmin from '../admin/LedgerAdmin.svelte';
@@ -22,8 +23,6 @@
     | 'audit'
     | 'sessions';
   let tab = $state<Tab>('dashboard');
-  let error = $state<string | null>(null);
-  let note = $state<string | null>(null);
   let busy = $state(false);
 
   const loginError = $derived(route.query.get('error'));
@@ -33,12 +32,10 @@
   });
 
   function fail(e: unknown) {
-    error = e instanceof WriteError || e instanceof Error ? e.message : String(e);
-    note = null;
+    toast.error(e instanceof WriteError || e instanceof Error ? e.message : String(e));
   }
   function done(msg: string) {
-    note = msg;
-    error = null;
+    toast.ok(msg);
   }
 
   // Overview
@@ -217,7 +214,13 @@
   }
 
   async function cancelJob(name: string) {
-    if (!confirm(`Stop ${name}? It finishes the batch it is on and keeps its cursor.`)) return;
+    const ok = await confirmDialog({
+      title: `Stop ${name}?`,
+      message:
+        'It finishes the batch it is on and keeps its cursor, so the next run resumes there.',
+      confirmLabel: 'Stop it',
+    });
+    if (!ok) return;
     busy = true;
     try {
       await send('POST', `/api/admin/poller/jobs/${name}/cancel`);
@@ -239,7 +242,12 @@
     const what = backfillPhase
       ? `from the ${backfillPhase} phase${backfillOnly ? ' only' : ''}`
       : 'from where its cursor is';
-    if (!confirm(`Start the backfill ${what}? It can take hours.`)) return;
+    const ok = await confirmDialog({
+      title: 'Start the backfill?',
+      message: `It runs ${what} in this process and can take hours. It can be stopped any time.`,
+      confirmLabel: 'Start',
+    });
+    if (!ok) return;
     await startJob('backfill', args);
   }
 
@@ -263,7 +271,12 @@
   async function requeueReplays(include404: boolean) {
     if (
       include404 &&
-      !confirm('Also retry replays that answered 404? Those were already deleted upstream.')
+      !(await confirmDialog({
+        title: 'Also retry the 404s?',
+        message:
+          'Those replays answered 404, so Momentum had already deleted them. Retrying costs API calls and will almost always fail again.',
+        confirmLabel: 'Retry them too',
+      }))
     )
       return;
     busy = true;
@@ -449,7 +462,13 @@
   }
 
   async function deleteAnnouncement(a: Announcement) {
-    if (!confirm('Delete this announcement?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete this announcement?',
+      message: a.body.length > 140 ? a.body.slice(0, 140) + '...' : a.body,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     busy = true;
     try {
       await send('DELETE', `/api/admin/announcements/${a.id}`);
@@ -523,7 +542,13 @@
   }
 
   async function deleteNotice(n: Notice) {
-    if (!confirm('Delete this notice?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete this notice?',
+      message: `It comes off ${n.alias ?? `user ${n.userId}`}'s page at once.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     busy = true;
     try {
       await send('DELETE', `/api/admin/notices/${n.id}`);
@@ -643,8 +668,6 @@
 
   function openTab(t: Tab) {
     tab = t;
-    error = null;
-    note = null;
   }
 
   const tabs: [Tab, string][] = [
@@ -689,14 +712,9 @@
 
   <nav class="tabs">
     {#each tabs as [id, label] (id)}
-      <button class:active={tab === id} onclick={() => ((tab = id), (error = null), (note = null))}
-        >{label}</button
-      >
+      <button class:active={tab === id} onclick={() => (tab = id)}>{label}</button>
     {/each}
   </nav>
-
-  {#if error}<p class="error">{error}</p>{/if}
-  {#if note}<p class="notice">{note}</p>{/if}
 
   {#if tab === 'dashboard'}
     <Dashboard go={(t) => openTab(t as Tab)} {draftCase} />
