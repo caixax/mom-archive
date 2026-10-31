@@ -72,7 +72,7 @@ The UI and `/api/about` state the date the archive started watching. Nothing bef
 
 ## Replay playback
 
-Every archived replay has a "view" link that plays it in the browser on the map it was recorded on, with [momtv.js](https://github.com/caixax/momtv.js) (`@caixax/momtv-player`, loaded as its own chunk only on `/watch/:sha1`, so it costs nothing on every other page).
+Every archived replay plays in the browser on the map it was recorded on, with [momtv.js](https://github.com/caixax/momtv.js) (`@caixax/momtv-player`). It plays where the run is: on the run's page, and inside an opened row on a map page, a profile or the deleted runs feed. The renderer is its own chunk and the map is fetched only when play is pressed, so a page that merely lists replays costs nothing. `/watch/:sha1` was a page of its own before that; it now forwards to the run it belongs to, so old links still work.
 
 The map has to come from this origin: the official API and CDN send no CORS headers, so the player cannot fetch a BSP itself. `GET /api/replays/:sha1` therefore resolves a `mapBsp` for every replay, matching the `mapHash` the replay header recorded against `map_versions.bsp_hash`, which means the archive plays back **the exact version the run was recorded on** whenever it observed that version, and says so in the UI when it has to fall back to a newer one. `GET /api/maps/bsp/:bspHash` then serves those bytes: from storage when `ARCHIVE_BSPS=true` archived them, otherwise streamed from the CDN with `Range` passed through (only ever the host in `MOMENTUM_CDN`, never an arbitrary stored URL).
 

@@ -34,10 +34,13 @@
         (#{run.rank}){/if}{:else}run {ref.id}{/if}</a
   >{#if run?.removedAt}<span class="badge removed">removed</span>{/if}
 {:else if ref.kind === 'replay'}
-  <a class="ref" href={`/watch/${ref.id}`}
-    >watch{#if replay}: {replay.alias ?? '?'} on {replay.mapName ?? '?'}{#if replay.time !== null},
+  <a
+    class="ref"
+    href={replay?.runId ? `/runs/${replay.runId}` : `/api/replays/${ref.id}/download`}
+    rel={replay?.runId ? null : 'external'}
+    >replay{#if replay}: {replay.alias ?? '?'} on {replay.mapName ?? '?'}{#if replay.time !== null},
         {formatTime(replay.time)}{/if}{:else}
-      replay {ref.id.slice(0, 8)}{/if}</a
+      {ref.id.slice(0, 8)}{/if}</a
   >
 {/if}
 

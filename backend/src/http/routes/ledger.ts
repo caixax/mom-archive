@@ -173,7 +173,8 @@ export async function registerLedgerRoutes(app: FastifyInstance, deps: HttpDeps)
       if (replays.length) {
         const rows = (await execRows(
           db,
-          sql`select p.sha1, p.run_time, coalesce(u.alias, p.observed_alias) as alias, p.user_id, m.name as map_name
+          sql`select p.sha1, p.run_time, coalesce(u.alias, p.observed_alias) as alias, p.user_id,
+                     p.past_run_id, m.name as map_name
               from replays p left join users u on u.id = p.user_id left join maps m on m.id = p.map_id
               where p.sha1 in ${replays}`,
         )) as unknown as Record<string, unknown>[];
@@ -183,6 +184,8 @@ export async function registerLedgerRoutes(app: FastifyInstance, deps: HttpDeps)
             time: r.run_time === null ? null : Number(r.run_time),
             alias: r.alias ?? null,
             userId: r.user_id === null ? null : Number(r.user_id),
+            // The run the replay belongs to: a reference points at its page.
+            runId: r.past_run_id === null ? null : Number(r.past_run_id),
             mapName: r.map_name ?? null,
           };
       }

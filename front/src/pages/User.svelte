@@ -493,7 +493,7 @@
     </label>
   </div>
   {#if runs}
-    <RunsTable runs={runs.data} showUser={false} />
+    <RunsTable runs={runs.data} showUser={false} userId={user.id} />
     <Pager
       page={runs.page}
       take={runs.take}

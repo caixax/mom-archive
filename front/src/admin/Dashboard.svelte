@@ -136,6 +136,7 @@
     { kind: 'user', title: 'Profiles', href: (r) => `/users/${r.key}` },
     { kind: 'map', title: 'Maps', href: (r) => `/maps/${encodeURIComponent(r.key)}` },
     { kind: 'run', title: 'Runs', href: (r) => `/runs/${r.key}` },
+    // Recorded while /watch was a page of its own; the path now forwards to the run.
     { kind: 'watch', title: 'Replays watched', href: (r) => `/watch/${r.key}` },
     { kind: 'ledger', title: 'Ledger posts', href: (r) => `/ledger/${r.key}` },
     { kind: 'page', title: 'Pages' },

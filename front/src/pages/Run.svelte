@@ -161,7 +161,6 @@
           ></a
         >
       {/if}
-      <a href={`/watch/${run.replay.sha1}`}><button>Open in the viewer</button></a>
       <span class="muted small"
         >sha1 <span class="mono">{run.replay.sha1}</span>, archived {formatDate(
           run.replay.downloadedAt,

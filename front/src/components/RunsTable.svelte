@@ -2,12 +2,30 @@
   import type { RunRow } from '../lib/api';
   import { formatDate, formatTime, gamemodeName, styleName, trackName } from '../lib/format';
   import Identity from './Identity.svelte';
+  import RunPanel from './RunPanel.svelte';
 
   let {
     runs,
     showUser = true,
     showMap = true,
-  }: { runs: RunRow[]; showUser?: boolean; showMap?: boolean } = $props();
+    /** Whose runs these are, for the rows that do not carry a user of their own. */
+    userId = null,
+  }: { runs: RunRow[]; showUser?: boolean; showMap?: boolean; userId?: number | null } = $props();
+
+  /** The one open run. One at a time keeps the page light. */
+  let openRun = $state<number | null>(null);
+
+  /** A click anywhere on the row opens it, except on something that was clickable already. */
+  function toggleRow(id: number, ev: MouseEvent) {
+    if ((ev.target as HTMLElement | null)?.closest('a, button, input, select')) return;
+    openRun = openRun === id ? null : id;
+  }
+
+  // A board is gone from under an open row when the list itself changes.
+  $effect(() => {
+    const ids = new Set(runs.map((r) => r.id));
+    if (openRun !== null && !ids.has(openRun)) openRun = null;
+  });
 </script>
 
 <div class="table-wrap">
@@ -23,13 +41,14 @@
         <th>Style</th>
         <th class="num">Time</th>
         <th class="num">Rank</th>
-        <th>Replay</th>
+        <th>Details</th>
         <th>Run</th>
+        <th class="open" aria-label="Open"></th>
       </tr>
     </thead>
     <tbody>
       {#each runs as r (r.id)}
-        <tr>
+        <tr class:open={openRun === r.id} onclick={(ev) => toggleRow(r.id, ev)}>
           <td class="flag">
             {#if r.removedAt}
               <!-- Marked, not struck through: the run is gone upstream, not less real. -->
@@ -79,31 +98,94 @@
           <td class="num">{formatTime(r.time)}</td>
           <td class="num">{r.rank ?? ''}</td>
           <td>
-            {#if r.replayHash && r.replayArchived}
-              <a href={`/watch/${r.replayHash}`}>view</a>
-              <span class="muted">/</span>
-              <a href={`/api/replays/${r.replayHash}/download`} rel="external" download>download</a>
-            {:else if r.replayHash}
+            <a href={`/runs/${r.id}`}>details</a>
+            {#if r.replayHash && !r.replayArchived}
               <span class="muted small" title="replay referenced but not archived"
-                >not archived</span
+                >replay not archived</span
               >
-            {:else}
-              <span class="muted small">none</span>
             {/if}
           </td>
           <td>
             <a href={`/runs/${r.id}`} class="mono small">#{r.id}</a>
             {#if r.isPb}<span class="badge accent">PB</span>{/if}
           </td>
+          <td class="open">
+            <button
+              class="chev"
+              aria-expanded={openRun === r.id}
+              aria-label={openRun === r.id ? 'Close this run' : 'Open this run'}
+              onclick={(ev) => {
+                ev.stopPropagation();
+                openRun = openRun === r.id ? null : r.id;
+              }}>{openRun === r.id ? '-' : '+'}</button
+            >
+          </td>
         </tr>
+        {#if openRun === r.id}
+          {@const who = r.userId ?? userId}
+          <tr class="details">
+            <td colspan="12">
+              {#if who === null}
+                <p class="muted">This run has no player recorded, so there is nothing to open.</p>
+              {:else}
+                <RunPanel
+                  userId={who}
+                  mapId={r.mapId}
+                  gamemode={r.gamemode}
+                  trackType={r.trackType}
+                  trackNum={r.trackNum}
+                  style={r.style}
+                  time={r.time}
+                  replayHash={r.replayHash}
+                  replayArchived={r.replayArchived}
+                  pastRunId={r.id}
+                />
+              {/if}
+            </td>
+          </tr>
+        {/if}
       {:else}
-        <tr><td colspan="11" class="muted">No runs.</td></tr>
+        <tr><td colspan="12" class="muted">No runs.</td></tr>
       {/each}
     </tbody>
   </table>
 </div>
 
 <style>
+  /* The expander sits at the end of the row, and the whole row is clickable too. */
+  th.open,
+  td.open {
+    width: 1.6rem;
+    padding-left: 0;
+    text-align: center;
+  }
+  button.chev {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    line-height: 1;
+    padding: 0.05rem 0.3rem;
+    cursor: pointer;
+  }
+  button.chev:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  tbody tr.open {
+    background: var(--bg-2);
+  }
+  tbody tr.open button.chev {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  tbody tr.details:hover {
+    background: none;
+  }
+  tr.details > td {
+    padding: 0;
+    border-bottom: 1px solid var(--border);
+  }
   th.flag,
   td.flag {
     width: 1.4rem;

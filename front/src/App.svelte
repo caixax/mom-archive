@@ -7,7 +7,7 @@
   import Users from './pages/Users.svelte';
   import User from './pages/User.svelte';
   import Run from './pages/Run.svelte';
-  import Watch from './pages/Watch.svelte';
+  import WatchRedirect from './pages/WatchRedirect.svelte';
   import Deleted from './pages/Deleted.svelte';
   import Api from './pages/Api.svelte';
   import About from './pages/About.svelte';
@@ -79,7 +79,8 @@
     if (p === '/users') return { c: Users, params: {} };
     if ((m = match('/users/:id', p))) return { c: User, params: m };
     if ((m = match('/runs/:id', p))) return { c: Run, params: m };
-    if ((m = match('/watch/:sha1', p))) return { c: Watch, params: m };
+    // The viewer lives on the run's page now; this only forwards old links.
+    if ((m = match('/watch/:sha1', p))) return { c: WatchRedirect, params: m };
     if (p === '/deleted') return { c: Deleted, params: {} };
     if (p === '/docs') return { c: Api, params: {} };
     if (p === '/about') return { c: About, params: {} };

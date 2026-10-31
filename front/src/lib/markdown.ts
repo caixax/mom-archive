@@ -150,6 +150,8 @@ export interface ResolvedRefs {
       time: number | null;
       alias: string | null;
       userId: number | null;
+      /** The run the replay belongs to, when the archive knows it. */
+      runId: number | null;
       mapName: string | null;
     }
   >;
