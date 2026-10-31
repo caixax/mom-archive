@@ -196,3 +196,93 @@ export async function requeueFailedReplays(
   );
   return (rows as unknown as unknown[]).length;
 }
+
+/** What {@link recheckReplayHeaders} did. */
+export interface HeaderRecheck {
+  checked: number;
+  /** Rows whose verdict changed from mismatched to matching. */
+  fixed: number;
+  /** Rows that still disagree with their run after the reread. */
+  stillBad: number;
+  /** Rows whose object is gone from storage. */
+  missing: number;
+}
+
+/**
+ * Reads the headers of stored replays again and records what they say, for
+ * when the header reader learns something. Format version 1 headers have no
+ * style byte, and the reader used to take one from the splits that follow, so
+ * those replays were marked as not matching their run. By default only those
+ * are checked again; `all` rereads every stored replay.
+ */
+export async function recheckReplayHeaders(
+  ctx: PollerContext,
+  options: { all?: boolean; limit?: number; signal?: AbortSignal } = {},
+): Promise<HeaderRecheck> {
+  const log = ctx.log.child({ module: 'replays' });
+  const rows = (await execRows(
+    ctx.db,
+    sql`select r.sha1, r.s3_key, r.header_ok, r.gamemode, r.track_type, r.track_num, r.style,
+               r.run_time, u.steam_id, m.name as map_name
+        from replays r
+        left join users u on u.id = r.user_id
+        left join maps m on m.id = r.map_id
+        where ${options.all ?? false} or (r.header ->> 'formatVersion') = '1'
+        order by r.downloaded_at
+        limit ${options.limit && options.limit > 0 ? options.limit : null}`,
+  )) as unknown as {
+    sha1: string;
+    s3_key: string;
+    header_ok: boolean;
+    gamemode: number | null;
+    track_type: number | null;
+    track_num: number | null;
+    style: number | null;
+    run_time: number | null;
+    steam_id: string | null;
+    map_name: string | null;
+  }[];
+  const result: HeaderRecheck = { checked: 0, fixed: 0, stillBad: 0, missing: 0 };
+  for (const row of rows) {
+    if (options.signal?.aborted) break;
+    const bytes = await ctx.storage.getBytes(row.s3_key);
+    if (!bytes) {
+      result.missing += 1;
+      log.error('replay object missing', { sha1: row.sha1 });
+      continue;
+    }
+    let header: ReturnType<typeof readHeader> | null = null;
+    let issues: string[];
+    try {
+      header = readHeader(bytes);
+      issues = checkHeader(header, {
+        gamemode: row.gamemode ?? header.gamemode,
+        trackType: row.track_type ?? header.trackType,
+        trackNum: row.track_num ?? header.trackNum,
+        style: row.style ?? header.style,
+        runTime: row.run_time ?? undefined,
+        steamId: row.steam_id ?? undefined,
+        mapName: row.map_name ?? undefined,
+      });
+    } catch (e) {
+      issues = [e instanceof ReplayReadError ? e.message : errMsg(e)];
+    }
+    const ok = header !== null && issues.length === 0;
+    await ctx.db
+      .update(replays)
+      .set({
+        header: header ? { ...header } : null,
+        headerOk: ok,
+        headerIssues: issues,
+        headerPlayerName: header?.playerName ?? null,
+      })
+      .where(eq(replays.sha1, row.sha1));
+    result.checked += 1;
+    if (ok && !row.header_ok) result.fixed += 1;
+    if (!ok) {
+      result.stillBad += 1;
+      log.warn('replay header still mismatched', { sha1: row.sha1, issues: issues.join('; ') });
+    }
+  }
+  return result;
+}

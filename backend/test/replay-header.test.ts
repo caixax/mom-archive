@@ -45,6 +45,21 @@ describe('replay header', () => {
     expect(h.timestamp).toBe(sample.timestamp);
   });
 
+  it('reads a format version 1 header, which has no style byte', () => {
+    // a version 1 file is a version 2 one without byte 194, so what follows
+    // the header (here the splits length, 0x20) starts one byte earlier
+    const v2 = writeHeader({ ...sample, formatVersion: 1 });
+    const v1 = Buffer.concat([
+      v2.subarray(0, REPLAY_HEADER_SIZE - 1),
+      Buffer.from([0x20, 0, 0, 0]),
+    ]);
+    const h = readHeader(v1);
+    expect(h.formatVersion).toBe(1);
+    expect(h.style).toBe(0);
+    expect(h.runTime).toBeCloseTo(sample.runTime, 9);
+    expect(readHeader(v1.subarray(0, REPLAY_HEADER_SIZE - 1)).style).toBe(0);
+  });
+
   it('rejects short buffers and bad magic', () => {
     expect(() => readHeader(Buffer.alloc(10))).toThrow(ReplayReadError);
     const bad = writeHeader({ ...sample, magic: 0x11223344 });

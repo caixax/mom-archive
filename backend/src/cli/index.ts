@@ -4,6 +4,7 @@
 //   reprocess-raw <prefix> [--limit n]      re-ingest raw API snapshots from S3 (runs, maps, users)
 //   verify-replays [--limit n]              re-download nothing; re-hash stored replays against their key
 //   requeue-replays [--include-404]         put failed replay downloads back in the queue
+//   recheck-replay-headers [--all] [--limit n]  reread stored headers (format version 1 by default)
 //   refresh-user <id> | refresh-map <id> | refresh-leaderboard <mapId:gm:tt:tn:style>
 //   job <name>                              run one scheduler job now
 import { createHash } from 'node:crypto';
@@ -29,7 +30,11 @@ import {
   refreshLeaderboard,
 } from '../poller/jobs/helpers.js';
 import { refreshWorker } from '../poller/jobs/refresh.js';
-import { replayWorker, requeueFailedReplays } from '../poller/jobs/replays.js';
+import {
+  recheckReplayHeaders,
+  replayWorker,
+  requeueFailedReplays,
+} from '../poller/jobs/replays.js';
 import { ingestRuns, runsIncremental, type IngestStats } from '../poller/jobs/runs.js';
 import { refreshQueueDepth, replayQueueStats } from '../poller/queue.js';
 import { observeMap, observeUser } from '../poller/observe.js';
@@ -47,7 +52,7 @@ async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (!cmd) {
     console.log(
-      'commands: sync, backfill, reprocess-raw, verify-replays, requeue-replays, refresh-user, refresh-map, refresh-leaderboard, job',
+      'commands: sync, backfill, reprocess-raw, verify-replays, requeue-replays, recheck-replay-headers, refresh-user, refresh-map, refresh-leaderboard, job',
     );
     process.exit(2);
   }
@@ -157,6 +162,15 @@ async function main(): Promise<void> {
       case 'requeue-replays': {
         const n = await requeueFailedReplays(ctx, flag('include-404'));
         log.info('requeued', { n });
+        break;
+      }
+      case 'recheck-replay-headers': {
+        const r = await recheckReplayHeaders(ctx, {
+          all: flag('all'),
+          limit: Number(arg('limit') ?? '0'),
+          signal: abort.signal,
+        });
+        log.info('recheck done', { ...r });
         break;
       }
       case 'refresh-user': {

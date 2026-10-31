@@ -1,6 +1,8 @@
 // MomentumTV (.momtv) replay header parser, ported from momentum-mod/website
 // libs/formats/replay (not published to npm). The header is a packed C struct,
-// 195 bytes, little endian. Frame data after the header is not parsed.
+// 195 bytes, little endian. Format version 1 is the same struct without its
+// last byte, the style, which the game reads as 0. Frame data after the header
+// is not parsed.
 
 export const REPLAY_MAGIC = 0x56544d4d; // "MMTV" little endian
 export const REPLAY_HEADER_SIZE = 195;
@@ -37,12 +39,15 @@ function cstring(buf: Buffer, offset: number, max: number): string {
 }
 
 export function readHeader(buf: Buffer): ReplayHeader {
-  if (buf.length < REPLAY_HEADER_SIZE) {
-    throw new ReplayReadError(`buffer too small: ${buf.length} < ${REPLAY_HEADER_SIZE}`);
+  const formatVersion = buf.length >= 8 ? buf.readInt32LE(4) : 0;
+  // version 1 has no style byte: its byte 194 already starts the splits length
+  const size = formatVersion === 1 ? REPLAY_HEADER_SIZE - 1 : REPLAY_HEADER_SIZE;
+  if (buf.length < size) {
+    throw new ReplayReadError(`buffer too small: ${buf.length} < ${size}`);
   }
   const header: ReplayHeader = {
     magic: buf.readUInt32LE(0),
-    formatVersion: buf.readInt32LE(4),
+    formatVersion,
     timestamp: Number(buf.readBigInt64LE(8)),
     mapName: cstring(buf, 16, 64),
     mapHash: cstring(buf, 80, 41),
@@ -54,7 +59,7 @@ export function readHeader(buf: Buffer): ReplayHeader {
     trackType: buf.readUInt8(167),
     trackNum: buf.readUInt8(168),
     runTime: buf.readDoubleLE(169),
-    style: buf.readUInt8(194),
+    style: formatVersion === 1 ? 0 : buf.readUInt8(194),
   };
   if (header.magic !== REPLAY_MAGIC) {
     throw new ReplayReadError(`bad magic 0x${header.magic.toString(16)}`);

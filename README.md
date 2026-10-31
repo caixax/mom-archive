@@ -162,7 +162,7 @@ mom-archive/
       poller/            scheduler, queues, diffing, observe (upserts + history), jobs/
       http/              Fastify app, plugins, routes, OpenAPI
       steam/             Steam Web API and SteamHistory.net clients
-      cli/               backfill, reprocess-raw, verify-replays, requeue-replays, refresh-*, job
+      cli/               backfill, reprocess-raw, verify-replays, requeue-replays, recheck-replay-headers, refresh-*, job
     drizzle/             SQL migrations (0000_init, 0001_search_index, 0002_wr_index, 0003_admin, 0004_traffic, 0005_ledger, 0006_reports)
     test/                vitest: unit tests + PGlite integration tests + opt-in live tests
   front/                 Svelte 5 + Vite static SPA, plain CSS, same-origin /api calls
@@ -248,6 +248,7 @@ Updating: run `./scripts/update.sh` from the repo root. It pulls, installs, buil
   - `reprocess-raw <raw/prefix> [--limit n]`: re-ingest stored raw pages (runs, maps, users)
   - `verify-replays [--limit n]`: re-hash every stored replay against its key
   - `requeue-replays [--include-404]`: retry failed downloads
+  - `recheck-replay-headers [--all] [--limit n]`: read stored replay headers again and record the verdict. Without `--all` only format version 1 replays are reread: their header has no style byte, which the reader used to take from the splits after it, marking them as not matching their run.
   - `refresh-user <id>`, `refresh-map <id>`, `refresh-leaderboard <mapId:gamemode:trackType:trackNum:style>`
   - `job <name>`: run a scheduler job once (for example `job maps-walk`)
 - Poller intervals: `POLL_RUNS_MINUTES` (10), `POLL_MAPS_HOURS` (6), `POLL_USERS_SWEEP_HOURS` (24), `POLL_LEADERBOARDS_SWEEP_HOURS` (24), `POLL_MAPS_WALK_HOURS` (24). `REPLAY_CONCURRENCY` (4). `POLLER_ENABLED=false` runs the API only.
