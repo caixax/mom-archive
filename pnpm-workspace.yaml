@@ -3,6 +3,15 @@ packages:
   - front
 overrides:
   'esbuild@<0.25.0': '>=0.25.0'
+  # Transitive through fastify's schema compiler and ajv-formats: URI scheme
+  # spoofing and host confusion, both fixed upstream.
+  'fast-uri@<3.1.9': '>=3.1.9'
+  'fast-uri@>=4.0.0 <4.2.3': '>=4.2.3'
+  # ajv ships its own copy, which the range above does not reach.
+  'ajv>fast-uri': '>=4.2.3'
+  'json-schema-resolver>fast-uri': '>=4.2.3'
+  # Dev only, through typescript-eslint: glob amplification.
+  'minimatch@<11.0.1': '>=11.0.1'
 minimumReleaseAgeExclude:
   - '@aws-sdk/client-s3@3.1151.0'
   - '@fastify/helmet@13.2.0'
