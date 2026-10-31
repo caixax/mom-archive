@@ -60,6 +60,27 @@
       .catch((e) => (error = String(e.message)));
   });
 
+  /**
+   * Where the game's own files are, when this server has them: the materials
+   * and models Momentum ships and the Half-Life 2 archive it mounts, which
+   * fill in whatever a map does not pack. A server without them answers the
+   * probe with a 404 (or, before nginx knows the path, with the page itself),
+   * and the map draws those surfaces as flat colours instead.
+   */
+  async function gameAssets(): Promise<{ assetsBaseUrl: string[]; vpkUrls: string[] } | null> {
+    try {
+      const res = await fetch('/game/mount/hl2_dir.vpk', { method: 'HEAD' });
+      const type = res.headers.get('content-type') ?? '';
+      if (!res.ok || type.includes('text/html')) return null;
+    } catch {
+      return null;
+    }
+    return {
+      assetsBaseUrl: ['/game/momentum', '/game/platform'],
+      vpkUrls: ['/game/mount/hl2_dir.vpk'],
+    };
+  }
+
   // The player is a few hundred kilobytes of WebGL2 renderer, so it is only
   // fetched when someone actually opens a replay.
   $effect(() => {
@@ -71,10 +92,14 @@
     status = 'loading the player';
     void (async () => {
       try {
-        const { createPlayer } = await import('@caixax/momtv-player');
+        const [{ createPlayer }, assets] = await Promise.all([
+          import('@caixax/momtv-player'),
+          gameAssets(),
+        ]);
         if (destroyed) return;
         status = 'reading the replay and the map';
         player = createPlayer(el, {
+          ...assets,
           replay: m.downloadUrl,
           map: m.mapBsp!.url,
           autoplay: true,
@@ -154,8 +179,9 @@
       Unofficial in browser playback with
       <a href="https://github.com/caixax/momtv.js" rel="external noopener noreferrer nofollow"
         >momtv.js</a
-      >. Materials the map does not pack itself are drawn as flat colours: the archive serves no
-      game files. Map version {meta.mapBsp.versionNum}, {meta.mapBsp.archived
+      >. Materials the map does not pack itself come from the files Momentum Mod ships with; one
+      from another game is drawn as a flat colour. Map version {meta.mapBsp.versionNum}, {meta
+        .mapBsp.archived
         ? 'served from the archive'
         : 'streamed from the official CDN'}.
     </p>

@@ -76,7 +76,17 @@ Every archived replay has a "view" link that plays it in the browser on the map 
 
 The map has to come from this origin: the official API and CDN send no CORS headers, so the player cannot fetch a BSP itself. `GET /api/replays/:sha1` therefore resolves a `mapBsp` for every replay, matching the `mapHash` the replay header recorded against `map_versions.bsp_hash`, which means the archive plays back **the exact version the run was recorded on** whenever it observed that version, and says so in the UI when it has to fall back to a newer one. `GET /api/maps/bsp/:bspHash` then serves those bytes: from storage when `ARCHIVE_BSPS=true` archived them, otherwise streamed from the CDN with `Range` passed through (only ever the host in `MOMENTUM_CDN`, never an arbitrary stored URL).
 
-No game files are served: materials a map does not pack itself are drawn as flat colours. Playback needs WebGL2; the page says so and still offers the download when it is missing.
+Materials a map does not pack itself come from the game files Momentum Mod ships with: its own materials and models, the engine's, and the Half-Life 2 archive it mounts (`mount/hl2_*.vpk`). nginx serves them at `/game/` from `/var/www/momarchive-game`, and the player reads the archive a few kilobytes at a time with range requests. The watch page checks for them first, so an archive without them still plays, drawing those surfaces as flat colours, as it does for materials from games Momentum does not ship (Team Fortress 2, Counter-Strike). Playback needs WebGL2; the page says so and still offers the download when it is missing.
+
+To install or update them, pack them on a machine with the game, copy the tar over and unpack it:
+
+```sh
+node scripts/pack-game-assets.mjs "C:/.../steamapps/common/Momentum Mod Playtest" game-assets.tar   # about 3.4 GB
+scp game-assets.tar <vps>:
+ssh <vps> 'sudo mkdir -p /var/www/momarchive-game && sudo tar -xf game-assets.tar -C /var/www/momarchive-game && rm game-assets.tar'
+```
+
+Paths are lowercased on the way in, since the player asks for them that way and Linux matches case.
 
 ## The Ledger
 

@@ -105,8 +105,9 @@
     >momtv.js</a
   >. The map comes from this site (the official CDN sends no CORS headers), and the archive serves
   the very version the run was recorded on when it has it, so the geometry matches what the runner
-  played. Materials the map does not pack itself are drawn as flat colours: no game files are served
-  here.
+  played. Materials the map does not pack itself come from the files Momentum Mod ships with (its
+  own and the Half-Life 2 content it mounts), served from here; a material from another game, such
+  as Team Fortress 2 or Counter-Strike, is drawn as a flat colour.
 </p>
 <p>
   For the real thing, download the .momtv file, drop it into the game's replay folder and open it
