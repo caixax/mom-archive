@@ -9,28 +9,60 @@
 //
 // This module is loaded on demand: it pulls in the replay reader, which has no
 // business in the main bundle.
-import { parseReplay } from '@caixax/momtv';
+import { Button, FL_ONGROUND, parseReplay } from '@caixax/momtv';
 
-/** What the game recorded about the run, plus the two averages worth deriving. */
+/**
+ * What a run adds up to.
+ *
+ * `game: true` fields are the numbers the game itself wrote into the file's
+ * splits block. Everything else is worked out here from the recorded per tick
+ * track, because the file does not carry it: those conventions differ between
+ * timers, so each one says in a comment exactly what it counts, and the panel
+ * shows a note saying which is which.
+ */
 export interface ReplayStats {
   /** Final time from the header, in seconds. */
   runTime: number;
   tickInterval: number;
   ticks: number;
-  /** Horizontal distance over run time. Derived. */
+  /** game. Horizontal distance over run time. Derived from two game numbers. */
   avgSpeed: number;
-  /** Fastest horizontal speed the game saw. */
+  /** game. Fastest horizontal speed. */
   maxSpeed: number;
-  /** Fastest speed counting the vertical axis. */
+  /** game. Fastest speed counting the vertical axis. */
   maxOverallSpeed: number;
-  /** Horizontal speed when the run timer started. */
-  startSpeed: number;
+  /** game. Horizontal speed when the timer started: the prestrafe into the run. */
+  prestrafeSpeed: number;
+  /** Horizontal speed on the last recorded tick. */
+  endSpeed: number;
+  /** game. Distance travelled on the horizontal plane. */
   horizontalDistance: number;
+  /** game. Distance travelled in three dimensions. */
   overallDistance: number;
+  /** game. */
   jumps: number;
+  /** game. */
   strafes: number;
-  /** Strafes per second. Derived. */
+  /** Strafes per second. */
   strafesPerSecond: number;
+  /** Seconds with the ground flag set, and that over the run time. */
+  groundTime: number;
+  groundShare: number;
+  /**
+   * Of the airborne ticks that were both turning and holding a strafe key, the
+   * share where the key matched the turn: left key while turning left, right key
+   * while turning right. The usual meaning of sync in a bhop timer.
+   */
+  sync: number;
+  /** Horizontal speed gained, adding up every tick that gained some. */
+  speedGain: number;
+  /** The same, counting only airborne ticks. */
+  airSpeedGain: number;
+  /** Duck pressed while airborne, counted once per press. */
+  duckTaps: number;
+  /** Times airborne speed dropped by more than 5 u/s in a tick, and the total lost. */
+  slowdowns: number;
+  speedLost: number;
   formatVersion: number;
   playerName: string;
   recordedAt: number;
@@ -212,6 +244,53 @@ export function analyse(bytes: ArrayBuffer): ReplayAnalysis {
     });
   }
 
+  // What the file does not carry: walked once over the recorded ticks.
+  let groundTicks = 0;
+  let syncGood = 0;
+  let syncTotal = 0;
+  let speedGain = 0;
+  let airSpeedGain = 0;
+  let duckTaps = 0;
+  let slowdowns = 0;
+  let speedLost = 0;
+  let wasSlowing = false;
+  for (let i = 0; i < count; i++) {
+    const tick = from + i;
+    const air = (track.flags[tick]! & FL_ONGROUND) === 0;
+    if (!air) groundTicks += 1;
+
+    const buttons = track.buttons[tick]!;
+    const left = (buttons & Button.MoveLeft) !== 0;
+    const right = (buttons & Button.MoveRight) !== 0;
+    // A duck tap is the press, not the hold, and only in the air.
+    if (air && (buttons & Button.Duck) !== 0) {
+      const before = i > 0 ? track.buttons[tick - 1]! : 0;
+      if ((before & Button.Duck) === 0) duckTaps += 1;
+    }
+
+    if (i === 0) continue;
+    // Yaw grows counter clockwise in Source, so a positive turn is a left turn.
+    const turn = rate[i]!;
+    if (air && Math.abs(turn) > 10 && left !== right) {
+      syncTotal += 1;
+      if ((turn > 0 && left) || (turn < 0 && right)) syncGood += 1;
+    }
+
+    const delta = speed[i]! - speed[i - 1]!;
+    if (delta > 0) {
+      speedGain += delta;
+      if (air) airSpeedGain += delta;
+      wasSlowing = false;
+    } else if (air && delta < -5) {
+      speedLost += -delta;
+      // One collision costs several ticks; count the event, not each tick.
+      if (!wasSlowing) slowdowns += 1;
+      wasSlowing = true;
+    } else {
+      wasSlowing = false;
+    }
+  }
+
   const s = splits.trackStats;
   const runTime = header.runTime > 0 ? header.runTime : count * dt;
   const startVelocity = splits.segments[0]?.effectiveStartVelocity;
@@ -223,12 +302,21 @@ export function analyse(bytes: ArrayBuffer): ReplayAnalysis {
       avgSpeed: runTime > 0 ? s.horizontalDistanceTravelled / runTime : 0,
       maxSpeed: s.maxHorizontalSpeed,
       maxOverallSpeed: s.maxOverallSpeed,
-      startSpeed: startVelocity ? Math.hypot(startVelocity.x, startVelocity.y) : 0,
+      prestrafeSpeed: startVelocity ? Math.hypot(startVelocity.x, startVelocity.y) : 0,
+      endSpeed: count > 0 ? speed[count - 1]! : 0,
       horizontalDistance: s.horizontalDistanceTravelled,
       overallDistance: s.overallDistanceTravelled,
       jumps: s.jumps,
       strafes: s.strafes,
       strafesPerSecond: runTime > 0 ? s.strafes / runTime : 0,
+      groundTime: groundTicks * dt,
+      groundShare: count > 0 ? groundTicks / count : 0,
+      sync: syncTotal > 0 ? syncGood / syncTotal : 0,
+      speedGain,
+      airSpeedGain,
+      duckTaps,
+      slowdowns,
+      speedLost,
       formatVersion: header.formatVersion,
       playerName: header.playerName,
       recordedAt: header.timestamp,

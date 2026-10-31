@@ -108,8 +108,31 @@
               >({formatInt(Math.round(s.maxOverallSpeed))} with vertical)</span
             >
           </dd>
-          <dt>Start speed</dt>
-          <dd class="mono">{formatInt(Math.round(s.startSpeed))} {units}</dd>
+          <dt>End speed</dt>
+          <dd class="mono">{formatInt(Math.round(s.endSpeed))} {units}</dd>
+          <dt>Prestrafe</dt>
+          <dd class="mono">{formatInt(Math.round(s.prestrafeSpeed))} {units}</dd>
+          <dt>Sync</dt>
+          <dd class="mono">
+            {(s.sync * 100).toFixed(1)}%
+            <span class="muted small">of turning air ticks</span>
+          </dd>
+          <dt>Speed gain</dt>
+          <dd class="mono">
+            {formatInt(Math.round(s.speedGain))}
+            {units}
+            <span class="muted small">({formatInt(Math.round(s.airSpeedGain))} in the air)</span>
+          </dd>
+          <dt>Slowdowns</dt>
+          <dd class="mono">
+            {formatInt(s.slowdowns)}
+            <span class="muted small">({formatInt(Math.round(s.speedLost))} {units} lost)</span>
+          </dd>
+          <dt>On ground</dt>
+          <dd class="mono">
+            {s.groundTime.toFixed(2)} s
+            <span class="muted small">({(s.groundShare * 100).toFixed(1)}% of the run)</span>
+          </dd>
           <dt>Strafes</dt>
           <dd class="mono">
             {formatInt(s.strafes)}
@@ -117,12 +140,12 @@
           </dd>
           <dt>Jumps</dt>
           <dd class="mono">{formatInt(s.jumps)}</dd>
+          <dt>Duck taps</dt>
+          <dd class="mono">{formatInt(s.duckTaps)}</dd>
           <dt>Distance</dt>
-          <dd class="mono">
-            {formatInt(Math.round(s.horizontalDistance))} u
-            <span class="muted small">({formatInt(Math.round(s.overallDistance))} u travelled)</span
-            >
-          </dd>
+          <dd class="mono">{formatInt(Math.round(s.horizontalDistance))} u</dd>
+          <dt>Distance 3D</dt>
+          <dd class="mono">{formatInt(Math.round(s.overallDistance))} u</dd>
           <dt>Ticks</dt>
           <dd class="mono">
             {formatInt(s.ticks)} at {Math.round(1 / s.tickInterval)} per second
@@ -133,10 +156,23 @@
             {formatDate(new Date(s.recordedAt).toISOString())}, format v{s.formatVersion}
           </dd>
         </dl>
-        <p class="muted small">
-          Speeds, distances, jumps and strafes are the numbers the game wrote into the file. The
-          average and the per second figures are worked out from them.
-        </p>
+        <details class="how small">
+          <summary>Where these come from</summary>
+          <p>
+            Max speed, prestrafe, both distances, jumps and strafes are the numbers the game itself
+            wrote into the file. Avg speed is the horizontal distance over the run time.
+          </p>
+          <p>
+            The rest is counted here from the recorded ticks, because the file does not carry it,
+            and timers do not all count it the same way. <b>Sync</b> is the share of airborne ticks
+            that were both turning and holding one strafe key where the key matched the turn.
+            <b>Speed gain</b> adds up every tick that gained horizontal speed.
+            <b>Slowdowns</b> counts the times airborne speed dropped by more than 5 {units} in a tick,
+            merging the ticks of one hit, and adds up what was lost. <b>On ground</b> is the ticks
+            with the ground flag set. <b>Duck taps</b> are duck presses in the air, counted once per
+            press. <b>End speed</b> is the last recorded tick.
+          </p>
+        </details>
       {:else if loading}
         <p class="muted">Reading the replay.</p>
       {:else if analysisError}
@@ -266,6 +302,19 @@
   }
   dd {
     margin: 0;
+  }
+  .how {
+    color: var(--muted);
+    margin: 0 0 0.5rem;
+  }
+  .how summary {
+    cursor: pointer;
+  }
+  .how p {
+    margin: 0.4rem 0;
+  }
+  .how b {
+    color: var(--text);
   }
   .attempts .table-wrap {
     max-height: 16rem;
