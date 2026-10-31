@@ -88,6 +88,14 @@ ssh <vps> 'sudo mkdir -p /var/www/momarchive-game && sudo tar -xf game-assets.ta
 
 Paths are lowercased on the way in, since the player asks for them that way and Linux matches case.
 
+### Opening a row
+
+A leaderboard row on a map page opens in place: the run's own numbers on the left, every attempt the archive saw from that player on that board on the right, and a strafe graph underneath.
+
+The numbers are read from the `.momtv` in the browser, not precomputed: `front/src/lib/replay-analysis.ts` (loaded on demand, so the reader costs nothing elsewhere) parses the file with `@caixax/momtv` and takes the speeds, distances, jumps and strafes **the game itself wrote into the splits block**. Only the average speed and the per second figures are derived, and the UI says which is which. The graph is the recorded view angle turned into a turn rate (degrees per second, unwrapped, at the file's own tick rate) drawn as plain SVG, with the recorded horizontal speed on top; next to it are five measurements of those angles (strafe changes, how many flipped with no sample near zero, median ticks near zero, median peak change, how even the rate stayed). They are measurements, and the page says as much: they are not a verdict about a player.
+
+The attempts list is the part only an archive can show. Momentum keeps the current personal best; the archive kept every run it ever saw on that leaderboard, so the list shows each one with its day, its gap to the player's best, whether it was a PB and whether it was later removed upstream.
+
 ## The Ledger
 
 `/ledger` holds posts written by whoever runs the archive: **cases** (bans and removed runs Momentum applied without a public word, laid out from the archive's own records), **news**, **concerns** and **site updates**. There are no comments.
@@ -271,7 +279,7 @@ Read only JSON under `/api`, ETag and `Cache-Control` on everything, OpenAPI at 
 | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `GET /api/users?q=&country=&role=&ban=&banned=&sort=&page=`                                               | search current and past aliases, Steam names, SourceBans names; country, role and ban filters |
 | `GET /api/users/:id`                                                                                      | current state + Steam + history + alias/avatar timelines + stats over time + SourceBans       |
-| `GET /api/users/:id/runs?gamemode=&style=&mapId=&removed=&page=`                                          | all runs including removed ones                                                               |
+| `GET /api/users/:id/runs?gamemode=&style=&mapId=&trackType=&trackNum=&removed=&page=`                     | all runs including removed ones; all five keys give one leaderboard's attempts                |
 | `GET /api/users/:id/follow-events`, `/follows`                                                            |                                                                                               |
 | `GET /api/maps?q=&gamemode=&bucket=released\|beta\|other&lbType=&native=&page=`                           |                                                                                               |
 | `GET /api/maps/:idOrName`                                                                                 | detail with leaderboards, versions, images, credits, history                                  |

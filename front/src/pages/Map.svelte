@@ -1,6 +1,7 @@
 <script lang="ts">
   import Identity from '../components/Identity.svelte';
   import Pager from '../components/Pager.svelte';
+  import RunPanel from '../components/RunPanel.svelte';
   import { api, type LeaderboardEntry } from '../lib/api';
   import {
     fieldLabel,
@@ -121,6 +122,14 @@
   const at = $derived(route.query.get('at') ?? '');
   const page = $derived(Number(route.query.get('page') ?? '1'));
   let atInput = $state('');
+  /** The one open row, as `userId:pastRunId`. One at a time keeps the page light. */
+  let openRow = $state<string | null>(null);
+
+  /** A click anywhere on the row opens it, except on something that was clickable already. */
+  function toggleRow(key: string, ev: MouseEvent) {
+    if ((ev.target as HTMLElement | null)?.closest('a, button, input, select')) return;
+    openRow = openRow === key ? null : key;
+  }
 
   $effect(() => {
     api<MapDetail>(`/api/maps/${encodeURIComponent(idOrName)}`)
@@ -135,6 +144,7 @@
     const id = map.id;
     atInput = at ? at.slice(0, 16) : '';
     boardError = null;
+    openRow = null;
     api<BoardResponse>(`/api/maps/${id}/leaderboard`, {
       gamemode: gm,
       trackType: tt,
@@ -315,14 +325,30 @@
       <table>
         <thead>
           <tr
-            ><th class="num">#</th><th>Player (as observed)</th><th class="num">Time</th><th
-              >Date</th
-            ><th>Replay</th><th>Run</th><th>Archive</th></tr
+            ><th class="open" aria-label="Open"></th><th class="num">#</th><th
+              >Player (as observed)</th
+            ><th class="num">Time</th><th>Date</th><th>Replay</th><th>Run</th><th>Archive</th></tr
           >
         </thead>
         <tbody>
           {#each board.data as e (`${e.userId}:${e.pastRunId}`)}
-            <tr class:removed={e.removedAt !== null}>
+            {@const key = `${e.userId}:${e.pastRunId}`}
+            <tr
+              class:removed={e.removedAt !== null}
+              class:open={openRow === key}
+              onclick={(ev) => toggleRow(key, ev)}
+            >
+              <td class="open">
+                <button
+                  class="chev"
+                  aria-expanded={openRow === key}
+                  aria-label={openRow === key ? 'Close this run' : 'Open this run'}
+                  onclick={(ev) => {
+                    ev.stopPropagation();
+                    openRow = openRow === key ? null : key;
+                  }}>{openRow === key ? '-' : '+'}</button
+                >
+              </td>
               <td class="num">{e.rank ?? ''}</td>
               <td
                 ><Identity
@@ -356,8 +382,26 @@
                   >{/if}
               </td>
             </tr>
+            {#if openRow === key}
+              <tr class="details">
+                <td colspan="8">
+                  <RunPanel
+                    userId={e.userId}
+                    mapId={map.id}
+                    gamemode={gm}
+                    trackType={tt}
+                    trackNum={tn}
+                    style={st}
+                    time={e.time}
+                    replayHash={e.replayHash}
+                    replayArchived={e.replayArchived}
+                    pastRunId={e.pastRunId}
+                  />
+                </td>
+              </tr>
+            {/if}
           {:else}
-            <tr><td colspan="7" class="muted">No entries.</td></tr>
+            <tr><td colspan="8" class="muted">No entries.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -478,3 +522,40 @@
     </section>
   </div>
 {/if}
+
+<style>
+  /* The expander column: narrow, and the whole row is clickable anyway. */
+  th.open,
+  td.open {
+    width: 1.6rem;
+    padding-right: 0;
+    text-align: center;
+  }
+  button.chev {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    line-height: 1;
+    padding: 0.05rem 0.3rem;
+    cursor: pointer;
+  }
+  button.chev:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  tbody tr.open {
+    background: var(--bg-2);
+  }
+  tbody tr.open button.chev {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  tbody tr.details:hover {
+    background: none;
+  }
+  tr.details > td {
+    padding: 0;
+    border-bottom: 1px solid var(--border);
+  }
+</style>

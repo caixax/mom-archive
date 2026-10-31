@@ -17,6 +17,8 @@ import {
   StyleQuery,
   TakeQuery,
   toIso,
+  TrackNumQuery,
+  TrackTypeQuery,
 } from '../common.js';
 import type { HttpDeps } from '../deps.js';
 import { execRows } from '../../db/index.js';
@@ -384,6 +386,10 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
           gamemode: Type.Optional(GamemodeQuery),
           style: Type.Optional(StyleQuery),
           mapId: Type.Optional(Type.Integer({ minimum: 1 })),
+          // With all five keys this is every attempt the archive saw from this
+          // player on one leaderboard, which is what a map page's expanded row asks for.
+          trackType: Type.Optional(TrackTypeQuery),
+          trackNum: Type.Optional(TrackNumQuery),
           removed: Type.Optional(Type.Boolean()),
           page: PageQuery,
           take: TakeQuery,
@@ -392,7 +398,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
       },
     },
     async (req) => {
-      const { gamemode, style, mapId, removed, page, take } = req.query;
+      const { gamemode, style, mapId, trackType, trackNum, removed, page, take } = req.query;
       const off = offsetOf(page, take);
       const rows = (await execRows(
         db,
@@ -408,6 +414,8 @@ export async function registerUserRoutes(app: FastifyInstance, deps: HttpDeps): 
           and (${gamemode ?? null}::int is null or r.gamemode = ${gamemode ?? null})
           and (${style ?? null}::int is null or r.style = ${style ?? null})
           and (${mapId ?? null}::int is null or r.map_id = ${mapId ?? null})
+          and (${trackType ?? null}::int is null or r.track_type = ${trackType ?? null})
+          and (${trackNum ?? null}::int is null or r.track_num = ${trackNum ?? null})
           and (${removed ?? null}::boolean is null or (r.removed_at is not null) = ${removed ?? null})
         order by r.momentum_created_at desc limit ${take} offset ${off}
       `,

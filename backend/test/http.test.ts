@@ -190,6 +190,25 @@ describe('http api', () => {
     expect(r.json().data.every((x: { isPb: boolean }) => x.isPb === false)).toBe(true);
   });
 
+  it('user runs narrow down to one leaderboard, which is what an opened row asks for', async () => {
+    const all = await app.inject({ url: '/api/users/14991/runs?mapId=2231&gamemode=3' });
+    const rows = all.json().data as { trackType: number; trackNum: number }[];
+    expect(rows.length).toBeGreaterThan(0);
+    const main = await app.inject({
+      url: '/api/users/14991/runs?mapId=2231&gamemode=3&trackType=0&trackNum=1&style=0',
+    });
+    expect(main.statusCode).toBe(200);
+    const narrowed = main.json().data as { trackType: number; trackNum: number }[];
+    expect(narrowed.length).toBe(rows.filter((r) => r.trackType === 0 && r.trackNum === 1).length);
+    expect(narrowed.every((r) => r.trackType === 0 && r.trackNum === 1)).toBe(true);
+    // A track nobody ran answers empty rather than falling back to everything.
+    const bonus = await app.inject({
+      url: '/api/users/14991/runs?mapId=2231&gamemode=3&trackType=2&trackNum=9',
+    });
+    expect(bonus.json().total).toBe(0);
+    expect((await app.inject({ url: '/api/users/14991/runs?trackType=7' })).statusCode).toBe(400);
+  });
+
   it('map detail resolves by name and id', async () => {
     const byName = await app.inject({ url: '/api/maps/df_biotrix-omega' });
     expect(byName.statusCode).toBe(200);

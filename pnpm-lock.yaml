@@ -254,6 +254,9 @@ importers:
 
   front:
     dependencies:
+      '@caixax/momtv':
+        specifier: 0.2.0
+        version: 0.2.0
       '@caixax/momtv-player':
         specifier: 0.2.0
         version: 0.2.0

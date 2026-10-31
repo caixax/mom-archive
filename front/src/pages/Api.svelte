@@ -19,8 +19,8 @@
       desc: 'Everything about a user: current state, Steam profile and bans, the full field change history (Momentum and Steam merged), alias and avatar timelines with sources, stats over time, SourceBans records, map credits and counts.',
     },
     {
-      path: 'GET /api/users/:id/runs?gamemode=&style=&mapId=&removed=&page=',
-      desc: 'All archived runs of the user, newest first. removed=true gives only runs deleted upstream.',
+      path: 'GET /api/users/:id/runs?gamemode=&style=&mapId=&trackType=&trackNum=&removed=&page=',
+      desc: 'All archived runs of the user, newest first. removed=true gives only runs deleted upstream. With mapId, gamemode, trackType, trackNum and style together you get every attempt the archive saw from that player on one leaderboard, which is what an opened row on a map page shows.',
     },
     {
       path: 'GET /api/users/:id/follows',
