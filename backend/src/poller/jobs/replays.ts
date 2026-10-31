@@ -15,6 +15,29 @@ const CLOUDFLARE_LIMIT = 100 * 1024 * 1024;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * What else a map has been: the names it went by before a rename and the BSP
+ * hash of every version the archive knows, so a replay recorded under an old
+ * name still counts as recorded on this map.
+ */
+async function mapIdentity(
+  db: PollerContext['db'],
+  mapId: number | null,
+): Promise<{ mapAliases: string[]; mapHashes: string[] }> {
+  if (mapId === null) return { mapAliases: [], mapHashes: [] };
+  const names = (await execRows(
+    db,
+    sql`select distinct old_value as name from map_field_changes
+        where map_id = ${mapId} and field = 'name' and old_value is not null`,
+  )) as unknown as { name: string }[];
+  const hashes = (await execRows(
+    db,
+    sql`select distinct lower(bsp_hash) as hash from map_versions
+        where map_id = ${mapId} and bsp_hash is not null`,
+  )) as unknown as { hash: string }[];
+  return { mapAliases: names.map((r) => r.name), mapHashes: hashes.map((r) => r.hash) };
+}
+
 export async function replayWorker(ctx: PollerContext, signal: AbortSignal): Promise<void> {
   const log = ctx.log.child({ module: 'replays' });
   while (!signal.aborted) {
@@ -65,6 +88,7 @@ async function processReplay(ctx: PollerContext, job: ReplayJob): Promise<void> 
           runTime: job.runTime ?? undefined,
           steamId: job.steamId ?? undefined,
           mapName: job.mapName ?? undefined,
+          ...(await mapIdentity(ctx.db, job.mapId)),
         });
       } catch (e) {
         issues = [e instanceof ReplayReadError ? e.message : errMsg(e)];
@@ -210,10 +234,11 @@ export interface HeaderRecheck {
 
 /**
  * Reads the headers of stored replays again and records what they say, for
- * when the header reader learns something. Format version 1 headers have no
- * style byte, and the reader used to take one from the splits that follow, so
- * those replays were marked as not matching their run. By default only those
- * are checked again; `all` rereads every stored replay.
+ * when the header check learns something. Format version 1 headers have no
+ * style byte, and the reader used to take one from the splits that follow; and
+ * a replay recorded before its map was renamed carries the old name. Both were
+ * marked as not matching their run. By default the version 1 replays and every
+ * replay marked as mismatched are checked again; `all` rereads every one.
  */
 export async function recheckReplayHeaders(
   ctx: PollerContext,
@@ -223,11 +248,11 @@ export async function recheckReplayHeaders(
   const rows = (await execRows(
     ctx.db,
     sql`select r.sha1, r.s3_key, r.header_ok, r.gamemode, r.track_type, r.track_num, r.style,
-               r.run_time, u.steam_id, m.name as map_name
+               r.run_time, r.map_id, u.steam_id, m.name as map_name
         from replays r
         left join users u on u.id = r.user_id
         left join maps m on m.id = r.map_id
-        where ${options.all ?? false} or (r.header ->> 'formatVersion') = '1'
+        where ${options.all ?? false} or not r.header_ok or (r.header ->> 'formatVersion') = '1'
         order by r.downloaded_at
         limit ${options.limit && options.limit > 0 ? options.limit : null}`,
   )) as unknown as {
@@ -239,9 +264,21 @@ export async function recheckReplayHeaders(
     track_num: number | null;
     style: number | null;
     run_time: number | null;
+    map_id: number | null;
     steam_id: string | null;
     map_name: string | null;
   }[];
+  // one lookup per map, not per replay: a popular map has thousands of runs
+  const identities = new Map<number, Awaited<ReturnType<typeof mapIdentity>>>();
+  const identityOf = async (mapId: number | null) => {
+    if (mapId === null) return mapIdentity(ctx.db, null);
+    let identity = identities.get(mapId);
+    if (!identity) {
+      identity = await mapIdentity(ctx.db, mapId);
+      identities.set(mapId, identity);
+    }
+    return identity;
+  };
   const result: HeaderRecheck = { checked: 0, fixed: 0, stillBad: 0, missing: 0 };
   for (const row of rows) {
     if (options.signal?.aborted) break;
@@ -263,6 +300,7 @@ export async function recheckReplayHeaders(
         runTime: row.run_time ?? undefined,
         steamId: row.steam_id ?? undefined,
         mapName: row.map_name ?? undefined,
+        ...(await identityOf(row.map_id)),
       });
     } catch (e) {
       issues = [e instanceof ReplayReadError ? e.message : errMsg(e)];

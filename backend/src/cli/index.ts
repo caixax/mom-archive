@@ -4,7 +4,7 @@
 //   reprocess-raw <prefix> [--limit n]      re-ingest raw API snapshots from S3 (runs, maps, users)
 //   verify-replays [--limit n]              re-download nothing; re-hash stored replays against their key
 //   requeue-replays [--include-404]         put failed replay downloads back in the queue
-//   recheck-replay-headers [--all] [--limit n]  reread stored headers (format version 1 by default)
+//   recheck-replay-headers [--all] [--limit n]  reread stored headers (version 1 and mismatched by default)
 //   refresh-user <id> | refresh-map <id> | refresh-leaderboard <mapId:gm:tt:tn:style>
 //   job <name>                              run one scheduler job now
 import { createHash } from 'node:crypto';

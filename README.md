@@ -258,7 +258,7 @@ Updating: run `./scripts/update.sh` from the repo root. It pulls, installs, buil
   - `reprocess-raw <raw/prefix> [--limit n]`: re-ingest stored raw pages (runs, maps, users)
   - `verify-replays [--limit n]`: re-hash every stored replay against its key
   - `requeue-replays [--include-404]`: retry failed downloads
-  - `recheck-replay-headers [--all] [--limit n]`: read stored replay headers again and record the verdict. Without `--all` only format version 1 replays are reread: their header has no style byte, which the reader used to take from the splits after it, marking them as not matching their run.
+  - `recheck-replay-headers [--all] [--limit n]`: read stored replay headers again and record the verdict. Without `--all` only format version 1 replays and those marked as mismatched are reread. A version 1 header has no style byte, which the reader used to take from the splits after it; and a replay recorded before its map was renamed carries the old name, which now counts when the header's map hash is a version of the map or the name is one the map had.
   - `refresh-user <id>`, `refresh-map <id>`, `refresh-leaderboard <mapId:gamemode:trackType:trackNum:style>`
   - `job <name>`: run a scheduler job once (for example `job maps-walk`)
 - Poller intervals: `POLL_RUNS_MINUTES` (10), `POLL_MAPS_HOURS` (6), `POLL_USERS_SWEEP_HOURS` (24), `POLL_LEADERBOARDS_SWEEP_HOURS` (24), `POLL_MAPS_WALK_HOURS` (24). `REPLAY_CONCURRENCY` (4). `POLLER_ENABLED=false` runs the API only.

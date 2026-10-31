@@ -75,6 +75,16 @@ export interface HeaderExpectation {
   runTime?: number;
   steamId?: string;
   mapName?: string;
+  /**
+   * Names the map went by before, since maps get renamed after runs are
+   * recorded on them (bhop_avantura became kz_bhop_avantura).
+   */
+  mapAliases?: readonly string[];
+  /**
+   * BSP hashes of every version of the map the archive knows. A header whose
+   * map hash is one of them was recorded on this map, whatever it was called.
+   */
+  mapHashes?: readonly string[];
 }
 
 /** Returns a list of mismatches between a parsed header and what the API said about the run. */
@@ -90,8 +100,11 @@ export function checkHeader(h: ReplayHeader, want: HeaderExpectation): string[] 
   if (want.steamId !== undefined && h.playerSteamID !== want.steamId) {
     issues.push(`steamID ${h.playerSteamID} != ${want.steamId}`);
   }
-  if (want.mapName !== undefined && h.mapName.toLowerCase() !== want.mapName.toLowerCase()) {
-    issues.push(`mapName ${h.mapName} != ${want.mapName}`);
+  if (want.mapName !== undefined) {
+    const names = [want.mapName, ...(want.mapAliases ?? [])].map((n) => n.toLowerCase());
+    const sameName = names.includes(h.mapName.toLowerCase());
+    const sameMap = want.mapHashes?.includes(h.mapHash.toLowerCase()) ?? false;
+    if (!sameName && !sameMap) issues.push(`mapName ${h.mapName} != ${want.mapName}`);
   }
   return issues;
 }

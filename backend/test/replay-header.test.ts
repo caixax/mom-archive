@@ -91,4 +91,17 @@ describe('replay header', () => {
     expect(issues.length).toBe(5);
     expect(issues.join(';')).toContain('gamemode 3 != 2');
   });
+
+  it('checkHeader accepts a map renamed after the run was recorded', () => {
+    // recorded as bhop_cooksassistant, the map now goes by another name
+    const h = readHeader(writeHeader(sample));
+    const run = { gamemode: 3, trackType: 0, trackNum: 1, style: 0, mapName: 'kz_cooksassistant' };
+    expect(checkHeader(h, run)).toEqual(['mapName bhop_cooksassistant != kz_cooksassistant']);
+    // the header's map hash is a version of this map
+    expect(checkHeader(h, { ...run, mapHashes: [sample.mapHash] })).toEqual([]);
+    // or the archive saw the rename
+    expect(checkHeader(h, { ...run, mapAliases: ['BHOP_COOKSASSISTANT'] })).toEqual([]);
+    // a hash of another map does not excuse the name
+    expect(checkHeader(h, { ...run, mapHashes: ['0'.repeat(40)] })).toHaveLength(1);
+  });
 });
