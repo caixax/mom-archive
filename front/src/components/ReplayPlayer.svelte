@@ -22,9 +22,8 @@
     bytes?: ArrayBuffer | null;
     /** Passed in when the page knows it; fetched here otherwise. */
     mapBsp?: MapBsp | null;
-    height?: string;
   }
-  let { sha1, bytes = null, mapBsp = null, height = 'min(70vh, 620px)' }: Props = $props();
+  let { sha1, bytes = null, mapBsp = null }: Props = $props();
 
   /** Filled from the prop when the page knows it, asked for otherwise. */
   let fetched = $state<MapBsp | null>(null);
@@ -109,7 +108,7 @@
     <p class="muted">Looking for the map this run was recorded on.</p>
   {/if}
 {:else}
-  <div class="stage" style={`--stage-height:${height}`}>
+  <div class="stage">
     {#if playing}
       <div class="screen" bind:this={host}></div>
       {#if status}<p class="status mono small">{status}</p>{/if}
@@ -140,10 +139,10 @@
     margin: 0.5rem 0;
   }
   .screen {
+    /* The game renders 16:9, so the box is 16:9 and the height follows the width. */
     display: block;
     width: 100%;
-    height: var(--stage-height);
-    min-height: 320px;
+    aspect-ratio: 16 / 9;
     background: #000;
     border: 1px solid var(--border);
   }

@@ -104,7 +104,7 @@
 
 <div class="panel">
   {#if replayHash && replayArchived}
-    <ReplayPlayer sha1={replayHash} {bytes} height="min(55vh, 440px)" />
+    <ReplayPlayer sha1={replayHash} {bytes} />
   {/if}
 
   <div class="cols">
