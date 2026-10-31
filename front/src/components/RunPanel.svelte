@@ -23,6 +23,8 @@
     replayHash: string | null;
     replayArchived: boolean;
     pastRunId: number | null;
+    /** The run's own page already carries these, so it turns them off. */
+    showActions?: boolean;
   }
   let {
     userId,
@@ -35,6 +37,7 @@
     replayHash,
     replayArchived,
     pastRunId,
+    showActions = true,
   }: Props = $props();
 
   let attempts = $state<RunRow[] | null>(null);
@@ -256,16 +259,19 @@
     </p>
   {/if}
 
-  <p class="actions">
-    {#if replayHash && replayArchived}
-      <a href={`/watch/${replayHash}`}><button class="primary">Watch the replay</button></a>
-      <a href={`/api/replays/${replayHash}/download`} rel="external" download
-        ><button>Download .momtv</button></a
-      >
-    {/if}
-    {#if pastRunId}<a href={`/runs/${pastRunId}`}><button>Run page</button></a>{/if}
-    <a href={`/users/${userId}`}><button>Player</button></a>
-  </p>
+  {#if showActions}
+    <p class="actions">
+      {#if pastRunId}<a href={`/runs/${pastRunId}`}
+          ><button class="primary">Open this run</button></a
+        >{/if}
+      {#if replayHash && replayArchived}
+        <a href={`/api/replays/${replayHash}/download`} rel="external" download
+          ><button>Download .momtv</button></a
+        >
+      {/if}
+      <a href={`/users/${userId}`}><button>Player</button></a>
+    </p>
+  {/if}
 </div>
 
 <style>

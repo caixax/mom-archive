@@ -14,31 +14,37 @@ import { Button, FL_ONGROUND, parseReplay } from '@caixax/momtv';
 /**
  * What a run adds up to.
  *
- * `game: true` fields are the numbers the game itself wrote into the file's
- * splits block. Everything else is worked out here from the recorded per tick
- * track, because the file does not carry it: those conventions differ between
- * timers, so each one says in a comment exactly what it counts, and the panel
- * shows a note saying which is which.
+ * The fields marked `game` are the numbers the game itself wrote into the
+ * file's splits block. The rest is worked out here from the recorded per tick
+ * track, either because the file never carries it or because that file left it
+ * at zero, which happens. Each one says in a comment exactly what it counts,
+ * and the panel tells the reader which is which.
  */
 export interface ReplayStats {
   /** Final time from the header, in seconds. */
   runTime: number;
   tickInterval: number;
   ticks: number;
-  /** game. Horizontal distance over run time. Derived from two game numbers. */
+  /** Horizontal distance over run time. */
   avgSpeed: number;
   /** game. Fastest horizontal speed. */
   maxSpeed: number;
   /** game. Fastest speed counting the vertical axis. */
   maxOverallSpeed: number;
-  /** game. Horizontal speed when the timer started: the prestrafe into the run. */
+  /** Horizontal speed when the timer started: the prestrafe into the run. */
   prestrafeSpeed: number;
   /** Horizontal speed on the last recorded tick. */
   endSpeed: number;
-  /** game. Distance travelled on the horizontal plane. */
+  /** Distance travelled on the horizontal plane. */
   horizontalDistance: number;
-  /** game. Distance travelled in three dimensions. */
+  /** Distance travelled in three dimensions. */
   overallDistance: number;
+  /**
+   * Whether the distances and the prestrafe came from the file or had to be
+   * measured here: some replays carry a splits block with those fields at zero.
+   */
+  distanceFromPath: boolean;
+  prestrafeFromPath: boolean;
   /** game. */
   jumps: number;
   /** game. */
@@ -204,12 +210,24 @@ export function analyse(bytes: ArrayBuffer): ReplayAnalysis {
 
   const yaw = new Float64Array(count);
   const speed = new Float64Array(count);
+  // Measured off the recorded path, for the files whose splits block leaves the
+  // distances at zero.
+  let pathFlat = 0;
+  let path3d = 0;
   for (let i = 0; i < count; i++) {
     const base = (from + i) * STRIDE;
     yaw[i] = track.data[base + YAW]!;
     const vx = track.data[base + VX]!;
     const vy = track.data[base + VY]!;
     speed[i] = Math.hypot(vx, vy);
+    if (i > 0) {
+      const prev = base - STRIDE;
+      const dx = track.data[base]! - track.data[prev]!;
+      const dy = track.data[base + 1]! - track.data[prev + 1]!;
+      const dz = track.data[base + 2]! - track.data[prev + 2]!;
+      pathFlat += Math.hypot(dx, dy);
+      path3d += Math.hypot(dx, dy, dz);
+    }
   }
   const continuous = unwrap(yaw);
   const rate = new Float64Array(count);
@@ -293,19 +311,49 @@ export function analyse(bytes: ArrayBuffer): ReplayAnalysis {
 
   const s = splits.trackStats;
   const runTime = header.runTime > 0 ? header.runTime : count * dt;
+
+  // A replay can carry a splits block whose distances are zero, and one with no
+  // segment for the start. Take the file's number when it says something, fall
+  // back to the sum of its segments, and measure the recorded path otherwise.
+  const fromSegments = (pick: (st: typeof s) => number): number =>
+    splits.segments.reduce((sum, seg) => sum + (pick(seg.segmentStats) || 0), 0);
+  const positive = (...candidates: number[]): number => {
+    for (const c of candidates) if (Number.isFinite(c) && c > 0) return c;
+    return 0;
+  };
+  const flat = positive(
+    s.horizontalDistanceTravelled,
+    fromSegments((st) => st.horizontalDistanceTravelled),
+    pathFlat,
+  );
+  const total = positive(
+    s.overallDistanceTravelled,
+    fromSegments((st) => st.overallDistanceTravelled),
+    path3d,
+  );
+  const fileFlat = positive(
+    s.horizontalDistanceTravelled,
+    fromSegments((st) => st.horizontalDistanceTravelled),
+  );
   const startVelocity = splits.segments[0]?.effectiveStartVelocity;
+  const fileStart = startVelocity
+    ? Math.hypot(startVelocity.x ?? NaN, startVelocity.y ?? NaN)
+    : NaN;
+  const prestrafe = Number.isFinite(fileStart) ? fileStart : (speed[0] ?? 0);
   return {
     stats: {
       runTime,
       tickInterval: dt,
       ticks: count,
-      avgSpeed: runTime > 0 ? s.horizontalDistanceTravelled / runTime : 0,
+      avgSpeed: runTime > 0 ? flat / runTime : 0,
       maxSpeed: s.maxHorizontalSpeed,
       maxOverallSpeed: s.maxOverallSpeed,
-      prestrafeSpeed: startVelocity ? Math.hypot(startVelocity.x, startVelocity.y) : 0,
+      prestrafeSpeed: prestrafe,
       endSpeed: count > 0 ? speed[count - 1]! : 0,
-      horizontalDistance: s.horizontalDistanceTravelled,
-      overallDistance: s.overallDistanceTravelled,
+      horizontalDistance: flat,
+      overallDistance: total,
+      distanceFromPath: fileFlat === 0,
+      prestrafeFromPath: !Number.isFinite(fileStart),
       jumps: s.jumps,
       strafes: s.strafes,
       strafesPerSecond: runTime > 0 ? s.strafes / runTime : 0,

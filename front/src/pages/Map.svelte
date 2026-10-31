@@ -325,9 +325,10 @@
       <table>
         <thead>
           <tr
-            ><th class="open" aria-label="Open"></th><th class="num">#</th><th
-              >Player (as observed)</th
-            ><th class="num">Time</th><th>Date</th><th>Replay</th><th>Run</th><th>Archive</th></tr
+            ><th class="num">#</th><th>Player (as observed)</th><th class="num">Time</th><th
+              >Date</th
+            ><th>Details</th><th>Run</th><th>Archive</th><th class="open" aria-label="Open"
+            ></th></tr
           >
         </thead>
         <tbody>
@@ -338,17 +339,6 @@
               class:open={openRow === key}
               onclick={(ev) => toggleRow(key, ev)}
             >
-              <td class="open">
-                <button
-                  class="chev"
-                  aria-expanded={openRow === key}
-                  aria-label={openRow === key ? 'Close this run' : 'Open this run'}
-                  onclick={(ev) => {
-                    ev.stopPropagation();
-                    openRow = openRow === key ? null : key;
-                  }}>{openRow === key ? '-' : '+'}</button
-                >
-              </td>
               <td class="num">{e.rank ?? ''}</td>
               <td
                 ><Identity
@@ -362,13 +352,12 @@
               <td class="num">{formatTime(e.time)}</td>
               <td class="mono small">{formatDate(e.momentumCreatedAt)}</td>
               <td>
-                {#if e.replayHash && e.replayArchived}<a href={`/watch/${e.replayHash}`}>view</a>
-                  <span class="muted">/</span>
-                  <a href={`/api/replays/${e.replayHash}/download`} rel="external" download
-                    >download</a
-                  >
-                {:else if e.replayHash}<span class="muted small">not archived</span>
-                {:else}<span class="muted small">none</span>{/if}
+                {#if e.pastRunId}<a href={`/runs/${e.pastRunId}`}>details</a>{:else}<span
+                    class="muted small">no run id</span
+                  >{/if}
+                {#if e.replayHash && !e.replayArchived}<span class="muted small"
+                    >replay not archived</span
+                  >{/if}
               </td>
               <td
                 >{#if e.pastRunId}<a href={`/runs/${e.pastRunId}`} class="mono small"
@@ -380,6 +369,17 @@
                 {#if e.removedAt}<span class="badge removed"
                     >removed {formatDate(e.removedAt, false)}</span
                   >{/if}
+              </td>
+              <td class="open">
+                <button
+                  class="chev"
+                  aria-expanded={openRow === key}
+                  aria-label={openRow === key ? 'Close this run' : 'Open this run'}
+                  onclick={(ev) => {
+                    ev.stopPropagation();
+                    openRow = openRow === key ? null : key;
+                  }}>{openRow === key ? '-' : '+'}</button
+                >
               </td>
             </tr>
             {#if openRow === key}
@@ -524,11 +524,11 @@
 {/if}
 
 <style>
-  /* The expander column: narrow, and the whole row is clickable anyway. */
+  /* The expander sits at the end of the row, and the whole row is clickable too. */
   th.open,
   td.open {
     width: 1.6rem;
-    padding-right: 0;
+    padding-left: 0;
     text-align: center;
   }
   button.chev {

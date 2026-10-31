@@ -88,11 +88,15 @@ ssh <vps> 'sudo mkdir -p /var/www/momarchive-game && sudo tar -xf game-assets.ta
 
 Paths are lowercased on the way in, since the player asks for them that way and Linux matches case.
 
-### Opening a row
+### Opening a row, and the run page
 
-A leaderboard row on a map page opens in place: the run's own numbers on the left, every attempt the archive saw from that player on that board on the right, and a strafe graph underneath.
+A leaderboard row carries a **details** link to the run's own page and an expander at its end that opens the same numbers in place, without leaving the board.
 
-The numbers are read from the `.momtv` in the browser, not precomputed: `front/src/lib/replay-analysis.ts` (loaded on demand, so the reader costs nothing elsewhere) parses the file with `@caixax/momtv` and takes the speeds, distances, jumps and strafes **the game itself wrote into the splits block**. Only the average speed and the per second figures are derived, and the UI says which is which. The graph is the recorded view angle turned into a turn rate (degrees per second, unwrapped, at the file's own tick rate) drawn as plain SVG, with the recorded horizontal speed on top; next to it are five measurements of those angles (strafe changes, how many flipped with no sample near zero, median ticks near zero, median peak change, how even the rate stayed). They are measurements, and the page says as much: they are not a verdict about a player.
+What both show: the run's figures on the left, every attempt the archive saw from that player on that board on the right, and a strafe graph underneath. The run page adds the replay itself, played in the page, and the files: the `.momtv` and the map version it needs.
+
+The figures are read from the `.momtv` in the browser, not precomputed: `front/src/lib/replay-analysis.ts` (loaded on demand, so the reader costs nothing elsewhere) parses the file with `@caixax/momtv`. Max speed, prestrafe, the distances, jumps and strafes are **the game's own numbers from the splits block**; a file that leaves those at zero, which happens, is measured off its recorded path instead and the panel says so. End speed, sync, speed gain, time on ground, duck taps and slowdowns are counted here from the ticks, because the file does not carry them and no two timers count them alike, so a note spells out what each one counts.
+
+The graph is the recorded view angle turned into a turn rate (degrees per second, unwrapped, at the file's own tick rate) drawn as plain SVG, with the recorded horizontal speed on top; next to it are five measurements of those angles (strafe changes, how many flipped with no sample near zero, median ticks near zero, median peak change, how even the rate stayed). They are measurements, and the page says as much: they are not a verdict about a player.
 
 The attempts list is the part only an archive can show. Momentum keeps the current personal best; the archive kept every run it ever saw on that leaderboard, so the list shows each one with its day, its gap to the player's best, whether it was a PB and whether it was later removed upstream.
 

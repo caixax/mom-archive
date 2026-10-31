@@ -1,5 +1,7 @@
 <script lang="ts">
   import Identity from '../components/Identity.svelte';
+  import ReplayPlayer, { type MapBsp } from '../components/ReplayPlayer.svelte';
+  import RunPanel from '../components/RunPanel.svelte';
   import { api } from '../lib/api';
   import {
     formatBytes,
@@ -64,6 +66,8 @@
   let run = $state<Detail | null>(null);
   let error = $state<string | null>(null);
   let showSplits = $state(false);
+  /** The map this replay plays back on, so the page can offer it for download too. */
+  let mapBsp = $state<MapBsp | null>(null);
 
   $effect(() => {
     api<Detail>(`/api/runs/${encodeURIComponent(id)}`)
@@ -71,6 +75,14 @@
       .catch(
         (e) => (error = e.status === 404 ? 'Run not found in the archive.' : String(e.message)),
       );
+  });
+
+  $effect(() => {
+    const sha1 = run?.replay?.sha1;
+    if (!sha1) return;
+    api<{ mapBsp: MapBsp | null }>(`/api/replays/${sha1}`)
+      .then((m) => (mapBsp = m.mapBsp))
+      .catch(() => (mapBsp = null));
   });
 </script>
 
@@ -135,11 +147,21 @@
 
   <h2>Replay</h2>
   {#if run.replay}
-    <p>
-      <a href={`/watch/${run.replay.sha1}`}><button class="primary">View demo</button></a>
+    <ReplayPlayer sha1={run.replay.sha1} {mapBsp} />
+    <p class="files">
       <a class="button" href={run.replay.downloadUrl} rel="external" download
-        ><button>Download .momtv ({formatBytes(run.replay.bytes)})</button></a
+        ><button class="primary">Download .momtv ({formatBytes(run.replay.bytes)})</button></a
       >
+      {#if mapBsp}
+        <a class="button" href={mapBsp.url} rel="external" download
+          ><button
+            >Download the map (v{mapBsp.versionNum}{mapBsp.exactVersion
+              ? ''
+              : ', a later version than this run'})</button
+          ></a
+        >
+      {/if}
+      <a href={`/watch/${run.replay.sha1}`}><button>Open in the viewer</button></a>
       <span class="muted small"
         >sha1 <span class="mono">{run.replay.sha1}</span>, archived {formatDate(
           run.replay.downloadedAt,
@@ -171,8 +193,11 @@
       {/if}
     {/if}
     <p class="muted small">
-      How to watch: put the file in your Momentum Mod replay folder and open it from the MomentumTV
-      menu in game. In browser playback is not possible; the frame format is not public.
+      Playback here is unofficial, with
+      <a href="https://github.com/caixax/momtv.js" rel="external noopener noreferrer nofollow"
+        >momtv.js</a
+      >. For the real thing, put the file in your Momentum Mod replay folder and open it from the
+      MomentumTV menu in game.
     </p>
   {:else if run.replayHash}
     <p class="notice">
@@ -195,11 +220,25 @@
     </p>
   {/if}
 
+  <h2>Numbers, strafes and attempts</h2>
+  <RunPanel
+    userId={run.userId}
+    mapId={run.mapId}
+    gamemode={run.gamemode}
+    trackType={run.trackType}
+    trackNum={run.trackNum}
+    style={run.style}
+    time={run.time}
+    replayHash={run.replayHash}
+    replayArchived={run.replayArchived}
+    pastRunId={run.id}
+    showActions={false}
+  />
+
   {#if run.splits}
     <h2>
-      Splits <button onclick={() => (showSplits = !showSplits)}
-        >{showSplits ? 'hide' : 'show'}</button
-      >
+      Splits as the game wrote them
+      <button onclick={() => (showSplits = !showSplits)}>{showSplits ? 'hide' : 'show'}</button>
     </h2>
     {#if showSplits}<pre>{JSON.stringify(run.splits, null, 2)}</pre>{/if}
   {/if}

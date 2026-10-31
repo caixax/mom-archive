@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from '../lib/api';
+  import { gameAssets } from '../lib/game-assets';
   import {
     formatBytes,
     formatDate,
@@ -59,27 +60,6 @@
       .then((m) => (meta = m))
       .catch((e) => (error = String(e.message)));
   });
-
-  /**
-   * Where the game's own files are, when this server has them: the materials
-   * and models Momentum ships and the Half-Life 2 archive it mounts, which
-   * fill in whatever a map does not pack. A server without them answers the
-   * probe with a 404 (or, before nginx knows the path, with the page itself),
-   * and the map draws those surfaces as flat colours instead.
-   */
-  async function gameAssets(): Promise<{ assetsBaseUrl: string[]; vpkUrls: string[] } | null> {
-    try {
-      const res = await fetch('/game/mount/hl2_dir.vpk', { method: 'HEAD' });
-      const type = res.headers.get('content-type') ?? '';
-      if (!res.ok || type.includes('text/html')) return null;
-    } catch {
-      return null;
-    }
-    return {
-      assetsBaseUrl: ['/game/momentum', '/game/platform'],
-      vpkUrls: ['/game/mount/hl2_dir.vpk'],
-    };
-  }
 
   // The player is a few hundred kilobytes of WebGL2 renderer, so it is only
   // fetched when someone actually opens a replay.
