@@ -377,10 +377,3 @@ export function analyse(bytes: ArrayBuffer): ReplayAnalysis {
     samples: count,
   };
 }
-
-/** Downloads an archived replay and measures it. */
-export async function analyseReplay(sha1: string): Promise<ReplayAnalysis> {
-  const res = await fetch(`/api/replays/${sha1}/download`, { headers: { accept: '*/*' } });
-  if (!res.ok) throw new Error(`the replay could not be read (HTTP ${res.status})`);
-  return analyse(await res.arrayBuffer());
-}

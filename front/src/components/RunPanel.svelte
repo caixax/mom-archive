@@ -10,6 +10,7 @@
   import { api, type Paged, type RunRow } from '../lib/api';
   import { formatDate, formatInt, formatTime } from '../lib/format';
   import type { ReplayAnalysis } from '../lib/replay-analysis';
+  import ReplayPlayer from './ReplayPlayer.svelte';
   import StrafeGraph from './StrafeGraph.svelte';
 
   interface Props {
@@ -47,6 +48,8 @@
   let analysis = $state<ReplayAnalysis | null>(null);
   let analysisError = $state<string | null>(null);
   let loading = $state(false);
+  /** The replay file, fetched once and handed to both the measurements and the player. */
+  let bytes = $state<ArrayBuffer | null>(null);
 
   $effect(() => {
     api<Paged<RunRow>>(`/api/users/${userId}/runs`, {
@@ -64,7 +67,7 @@
       .catch((e) => (attemptsError = String(e.message)));
   });
 
-  // The reader is only fetched when a row is actually opened.
+  // Both the file and the reader are only fetched when a row is actually opened.
   $effect(() => {
     if (!replayHash || !replayArchived) return;
     let dropped = false;
@@ -72,9 +75,16 @@
     analysisError = null;
     void (async () => {
       try {
-        const { analyseReplay } = await import('../lib/replay-analysis');
-        const a = await analyseReplay(replayHash);
-        if (!dropped) analysis = a;
+        const res = await fetch(`/api/replays/${replayHash}/download`, {
+          headers: { accept: '*/*' },
+        });
+        if (!res.ok) throw new Error(`the replay could not be read (HTTP ${res.status})`);
+        const buf = await res.arrayBuffer();
+        if (dropped) return;
+        bytes = buf;
+        const { analyse } = await import('../lib/replay-analysis');
+        if (dropped) return;
+        analysis = analyse(buf);
       } catch (e) {
         if (!dropped) analysisError = e instanceof Error ? e.message : String(e);
       } finally {
@@ -93,6 +103,10 @@
 </script>
 
 <div class="panel">
+  {#if replayHash && replayArchived}
+    <ReplayPlayer sha1={replayHash} {bytes} height="min(55vh, 440px)" />
+  {/if}
+
   <div class="cols">
     <section class="stats">
       <h4>Run</h4>

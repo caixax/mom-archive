@@ -92,7 +92,7 @@ Paths are lowercased on the way in, since the player asks for them that way and 
 
 A leaderboard row carries a **details** link to the run's own page and an expander at its end that opens the same numbers in place, without leaving the board.
 
-What both show: the run's figures on the left, every attempt the archive saw from that player on that board on the right, and a strafe graph underneath. The run page adds the replay itself, played in the page, and the files: the `.momtv` and the map version it needs.
+What both show: the replay, played right there, then the run's figures on the left, every attempt the archive saw from that player on that board on the right, and a strafe graph underneath. The run page adds the files: the `.momtv` and the map version it needs. Nothing is downloaded until a row is opened, and the replay file is fetched once for both the figures and the playback.
 
 The figures are read from the `.momtv` in the browser, not precomputed: `front/src/lib/replay-analysis.ts` (loaded on demand, so the reader costs nothing elsewhere) parses the file with `@caixax/momtv`. Max speed, prestrafe, the distances, jumps and strafes are **the game's own numbers from the splits block**; a file that leaves those at zero, which happens, is measured off its recorded path instead and the panel says so. End speed, sync, speed gain, time on ground, duck taps and slowdowns are counted here from the ticks, because the file does not carry them and no two timers count them alike, so a note spells out what each one counts.
 
