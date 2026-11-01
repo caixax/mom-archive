@@ -93,6 +93,14 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error(e instanceof Error ? e.message : e);
+  // A failed query only says which query it was; what went wrong (refused
+  // connection, bad password, full disk) is in its cause.
+  for (
+    let err: unknown = e;
+    err !== undefined;
+    err = err instanceof Error ? err.cause : undefined
+  ) {
+    console.error(err instanceof Error ? err.message : err);
+  }
   process.exit(1);
 });
